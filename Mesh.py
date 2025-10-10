@@ -5,21 +5,25 @@ import warnings
 class MeshClass:
 
     # Element type definitions from CGNS standard
-    ELEMENT_TYPES = {
+    ELEMENT_NAMES_FROM_TYPES = {
+        '10': 'TETRA_4',
+        '12': 'PYRA_5',
+        '14': 'PENTA_6',
+        '17': 'HEXA_8',
+        '5' : 'TRI_3',
+        '7' : 'QUAD_4',
+        '2' : 'BAR_2'
+    }
+
+    # Element type definitions from CGNS standard
+    ELEMENT_TYPES_FROM_NAMES = {
         'TETRA_4': 10,
         'PYRA_5': 12,
         'PENTA_6': 14,
         'HEXA_8': 17,
-        'TETRA_10': 11,
-        'PYRA_14': 13,
-        'PENTA_15': 15,
-        'HEXA_20': 18,
-        'HEXA_27': 19,
         'TRI_3': 5,
         'QUAD_4': 7,
-        'MIXED': 20,
-        'NGON_n': 22,
-        'NFACE_n': 23
+        'BAR_2': 2
     }
 
     # Nodes per element for each type
@@ -30,17 +34,12 @@ class MeshClass:
         12: 5,   # PYRA_5
         14: 6,   # PENTA_6
         17: 8,   # HEXA_8
-        11: 10,  # TETRA_10
-        13: 14,  # PYRA_14
-        15: 15,  # PENTA_15
-        18: 20,  # HEXA_20
-        19: 27   # HEXA_27
     }
 
     # Node-to-node Connections per element for each type
     NODESCONNECTIONS_PER_ELEMENT = {
-        5: 3,    # TRI_3
-        7: 4,    # QUAD_4
+        5: [[1, 2], [0, 2], [0, 1]],    # TRI_3
+        7: [[1, 3], [0, 2], [1, 3], [0, 2]],    # QUAD_4
         10: [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]],   # TETRA_4
         12: [[1, 3, 4], [0, 2, 4], [1, 3, 4], [0, 2, 4], [0, 1, 2, 3]],   # PYRA_5
         14: [[1, 2, 3], [0, 2, 4], [0, 1, 5], [0, 4, 5], [1, 3, 5], [2, 3, 4]],   # PENTA_6
@@ -48,7 +47,7 @@ class MeshClass:
         17: [[1, 3, 4], [0, 2, 5], [1, 3, 6], [0, 2, 7], [0, 5, 7], [1, 4, 6], [2, 5, 7], [3, 4, 6]],   # HEXA_8
     }
 
-    def __init__(self, GridFileName=None):
+    def __init__(self, GridFileName=None, nDim=3):
         """
         Initialize Element Class
 
@@ -58,6 +57,7 @@ class MeshClass:
             Path to CGNS file
         """
         self.GridFileName = GridFileName
+        self.nDim = nDim
         self.Elements = {}
         self.Nodes = None
         self.NodesConnectedToNode = None
@@ -73,6 +73,35 @@ class MeshClass:
         self.boundary_nodes = {}
         
 
+    def _compute_tria_properties_Vec(self, nodes, NPoints, alreadyReshaped = False):
+        """Compute volume and center for tetrahedron"""
+        if not alreadyReshaped:
+            print("Compute volume and center for tetrahedrons...")
+            nodes = np.reshape(nodes, (int(len(nodes[:, 0])/NPoints), NPoints, 3))
+
+        d1 = np.squeeze(nodes[:, 1, :]-nodes[:, 0, :])
+        d2 = np.squeeze(nodes[:, 2, :]-nodes[:, 1, :])
+
+        return 0.5*np.linalg.norm(np.cross(d1, d2, axis=1), axis=1), np.mean(nodes, axis=1)
+
+    
+    def _compute_quad_properties_Vec(self, nodes, NPoints):
+        """Compute area and center for quadrilater"""
+        print("Compute area and center for quadrilater...")
+        nodes = np.reshape(nodes, (int(len(nodes[:, 0])/NPoints), NPoints, 3))
+        center = np.mean(nodes, axis=1)
+        volume = 0.0
+        # Split into 2 trias
+        tria = [
+            [0, 1, 2],
+            [2, 3, 0]
+        ]
+        for tria in tria:
+            tria_nodes = nodes[:, tria, :]
+            v, _ = self._compute_tria_properties_Vec(tria_nodes, 3, alreadyReshaped = True)
+            volume += v
+        return volume, center
+    
     def _compute_tetra_properties_Vec(self, nodes, NPoints, alreadyReshaped = False):
         """Compute volume and center for tetrahedron"""
         if not alreadyReshaped:
@@ -148,6 +177,15 @@ class MeshClass:
         normal = np.cross(d1, d2, axis=1)
         return normal/np.repeat(np.linalg.norm(normal, axis=1)[..., np.newaxis], 3, axis=1)
     
+    def _compute_normal_line(self, nodes):
+        nodes = np.reshape(nodes, (int(len(nodes[:, 0])/2), 2, 3))
+        d1 = np.squeeze(nodes[:, 1, :] - nodes[:, 0, :])
+        normal = d1.copy()
+        normal[:, 0] = d1[:, 1]
+        normal[:, 1] = -d1[:, 0]
+
+        return normal/np.repeat(np.linalg.norm(normal, axis=1)[..., np.newaxis], 3, axis=1)
+    
 
     def _read_cgns_h5py(self, zone_name, BCs):
         """Read CGNS using h5py - NumPy 2.0 compatible"""
@@ -160,13 +198,6 @@ class MeshClass:
             # Navigate CGNS tree structure
             base_name = 'Base'
             base = f[base_name]
-
-            # Find zone
-            # print(base.keys())
-            # for key in base.keys():
-            #     if key not in [' name', ' label', 'ZoneType']:
-            #         zone_name = key
-            #         break
 
             if zone_name is None:
                 raise ValueError("No zone found in CGNS file")
@@ -191,7 +222,9 @@ class MeshClass:
 
             x = read_coord('CoordinateX')
             y = read_coord('CoordinateY')
-            z = read_coord('CoordinateZ')
+            z = np.zeros(x.shape)
+            if self.nDim == 3:
+                z = read_coord('CoordinateZ')
 
             self.Nodes = np.column_stack([x, y, z])
             self.n_nodes = len(self.Nodes)
@@ -237,7 +270,7 @@ class MeshClass:
                             end_idx = len(connectivity)
 
                         # Store elements
-                        section_name = key
+                        section_name = self.ELEMENT_NAMES_FROM_TYPES[str(elem_type)]
                         self.Elements[section_name] = {
                             'type': elem_type,
                             'connectivity': connectivity - 1,  # Convert to 0-based
@@ -266,15 +299,17 @@ class MeshClass:
                         isOnBoundary[node_list] = True
 
 
-                        if BCs[bc_name] == 'tri':
+                        if BCs[bc_name]['Elem_type'] == 'line':
+                            normals = self._compute_normal_line(self.Nodes[node_list])
+                        elif BCs[bc_name]['Elem_type'] == 'tri':
                             normals = self._compute_normal_tria(self.Nodes[node_list])
-                        if BCs[bc_name] == 'quad':
+                        elif BCs[bc_name]['Elem_type'] == 'quad':
                             normals = self._compute_normal_quad(self.Nodes[node_list])
                         
                         self.boundary_nodes[bc_name] = {
                                                         'node_list' : node_list,
                                                         'normals': normals,
-                                                        'elem_type': BCs[bc_name]
+                                                        'elem_type': BCs[bc_name]['Elem_type']
                                                         }
                         self.boundary_faces[bc_name] = bc_name
                         print(f"  Boundary '{bc_name}': {len(node_list)} nodes")
@@ -302,14 +337,11 @@ class MeshClass:
     def SetNodesConnectedToNode(self):
         # Build node-to-node connectivity from elements
         node_neighbors = defaultdict(set)
+        node_cells = defaultdict(set)
 
         for section_name, elem_data in self.Elements.items():
             elem_type = elem_data['type']
             connectivity = elem_data['connectivity']
-
-            # Skip boundary elements
-            if elem_type in [2, 3, 5, 7]:
-                continue
 
             nodes_per_elem = self.NODES_PER_ELEMENT.get(elem_type, 0)
             nodesConns_per_elem = self.NODESCONNECTIONS_PER_ELEMENT.get(elem_type, 0)
@@ -327,6 +359,7 @@ class MeshClass:
                 for iNode, iNodeGlobal in enumerate(node_indices):
                     nodeConn = nodesConns_per_elem[iNode]
                     node_neighbors[iNodeGlobal].update(node_indices[nodeConn])
+                node_cells[iNodeGlobal].update((i, elem_type))
             
 
         self.NodesConnectedToNode = node_neighbors
@@ -347,7 +380,7 @@ class MeshClass:
                             
                             if bname in boundary_conditions:
                                 bc_data = boundary_conditions[bname]
-                                if bc_data['value'] == 'normal':
+                                if bc_data['Value'] == 'normal':
                                     # it belongs to a wall 
                                     # reshape the bnodes array to have a clear view of the elements
                                     if bdict['elem_type'] == 'tri':
@@ -388,10 +421,6 @@ class MeshClass:
             elem_type = elem_data['type']
             connectivity = elem_data['connectivity']
          
-            # Skip boundary elements (2D elements)
-            if elem_type in [2, 3, 5, 7]:  # Line, Triangle, Quad
-                print(f"  Skipping boundary section '{section_name}' (type={elem_type})")
-                continue
 
             nodes_per_elem = self.NODES_PER_ELEMENT.get(elem_type, 0)
             if nodes_per_elem == 0:
@@ -401,7 +430,11 @@ class MeshClass:
             elem_nodes = self.Nodes[connectivity]
 
             # Compute volume and center based on element type
-            if   elem_type == 10:  # TETRA_4
+            if   elem_type == 5:  # TRI_3
+                volumes, centers = self._compute_tria_properties_Vec(elem_nodes, nodes_per_elem)
+            elif elem_type == 7:  # QUAD_4
+                volumes, centers = self._compute_quad_properties_Vec(elem_nodes, nodes_per_elem)
+            elif elem_type == 10:  # TETRA_4
                 volumes, centers = self._compute_tetra_properties_Vec(elem_nodes, nodes_per_elem)
             elif elem_type == 17:  # HEXA_8
                 volumes, centers = self._compute_hexa_properties_Vec(elem_nodes, nodes_per_elem)

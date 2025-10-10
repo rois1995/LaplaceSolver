@@ -15,7 +15,7 @@ from pyamg.krylov import fgmres
 from scipy.sparse.csgraph import reverse_cuthill_mckee
 from collections import defaultdict
 import warnings
-from Geometry import MeshClass
+from Mesh import MeshClass
 
 class UnstructuredPoissonSolver:
     """
@@ -23,51 +23,7 @@ class UnstructuredPoissonSolver:
     Supports tetrahedra, hexahedra, pyramids, and prisms
     """
 
-    # Element type definitions from CGNS standard
-    ELEMENT_TYPES = {
-        'TETRA_4': 10,
-        'PYRA_5': 12,
-        'PENTA_6': 14,
-        'HEXA_8': 17,
-        'TETRA_10': 11,
-        'PYRA_14': 13,
-        'PENTA_15': 15,
-        'HEXA_20': 18,
-        'HEXA_27': 19,
-        'TRI_3': 5,
-        'QUAD_4': 7,
-        'MIXED': 20,
-        'NGON_n': 22,
-        'NFACE_n': 23
-    }
-
-    # Nodes per element for each type
-    NODES_PER_ELEMENT = {
-        5: 3,    # TRI_3
-        7: 4,    # QUAD_4
-        10: 4,   # TETRA_4
-        12: 5,   # PYRA_5
-        14: 6,   # PENTA_6
-        17: 8,   # HEXA_8
-        11: 10,  # TETRA_10
-        13: 14,  # PYRA_14
-        15: 15,  # PENTA_15
-        18: 20,  # HEXA_20
-        19: 27   # HEXA_27
-    }
-
-    # Node-to-node Connections per element for each type
-    NODESCONNECTIONS_PER_ELEMENT = {
-        5: 3,    # TRI_3
-        7: 4,    # QUAD_4
-        10: [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]],   # TETRA_4
-        12: [[1, 3, 4], [0, 2, 4], [1, 3, 4], [0, 2, 4], [0, 1, 2, 3]],   # PYRA_5
-        14: [[1, 2, 3], [0, 2, 4], [0, 1, 5], [0, 4, 5], [1, 3, 5], [2, 3, 4]],   # PENTA_6
-        # 17: [[1, 3, 4], [0, 2, 3], [1, 3, 6], [0, 2, 7], [0, 5, 7], [1, 4, 6], [1, 2, 5], [3, 4, 6]],   # HEXA_8
-        17: [[1, 3, 4], [0, 2, 5], [1, 3, 6], [0, 2, 7], [0, 5, 7], [1, 4, 6], [2, 5, 7], [3, 4, 6]],   # HEXA_8
-    }
-
-    def __init__(self, GridFileName=None):
+    def __init__(self, GridFileName=None, nDim=3):
         """
         Initialize solver
 
@@ -92,9 +48,10 @@ class UnstructuredPoissonSolver:
         self.boundaryNormal = None
         self.BCsAssociatedToNode = None
         self.node_neighbors = None
-        self.Mesh = MeshClass(GridFileName)
+        self.nDim = nDim
+        self.Mesh = MeshClass(GridFileName, nDim)
 
-    def read_cgns_unstructured(self, zone_name, BCs):
+    def read_cgns_unstructured(self, options):
         """
         Read unstructured CGNS grid with mixed element types
         Compatible with NumPy 2.0
@@ -102,7 +59,7 @@ class UnstructuredPoissonSolver:
         print(f"Reading CGNS file: {self.GridFileName}")
 
         try:
-            self.Mesh._read_cgns_h5py(zone_name, BCs)
+            self.Mesh._read_cgns_h5py(options["BlockName"], options["BoundaryConditions"])
         except Exception as e:
             print(f"h5py read failed: {e}")
             raise RuntimeError("Failed to read CGNS file.")
@@ -112,10 +69,16 @@ class UnstructuredPoissonSolver:
         print(f"Constructing secondary mesh structures...")
 
         self.Mesh.construct_secondaryMeshStructures(self.boundary_conditions)
+
+    def set_VolumeAndBoundaryConditions(self, options):
+
+        self.set_volume_condition(options["VolumeCondition"])
+        self.set_boundary_conditions(options["BoundaryConditions"])
+
     
 
 
-    def set_boundary_condition(self, boundary_name, bc_type, bc_value):
+    def set_boundary_conditions(self, BC):
         """
         Set boundary condition by boundary name
 
@@ -134,18 +97,22 @@ class UnstructuredPoissonSolver:
         solver.set_boundary_condition("wall", "neumann", 1.0)
         solver.set_boundary_condition("inlet", "neumann", lambda pos: pos[0])
         """
-        if boundary_name not in self.Mesh.boundary_nodes and boundary_name not in self.Mesh.boundary_faces:
-            print(f"Warning: Boundary '{boundary_name}' not found in grid")
-            print(f"Available boundaries: {list(set(list(self.Mesh.boundary_nodes.keys()) + list(self.boundary_faces.keys())))}")
-            return
 
-        self.boundary_conditions[boundary_name] = {
-            'type': bc_type.lower(),
-            'value': bc_value
-        }
-        print(f"Set BC on '{boundary_name}': {bc_type} = {bc_value}")
+        for bc_name in BC.keys():
 
-    def set_volume_condition(self, volume_fun, exactSolution=False):
+            if bc_name not in self.Mesh.boundary_nodes and bc_name not in self.Mesh.boundary_faces:
+                print(f"Warning: Boundary '{bc_name}' not found in grid")
+                print(f"Available boundaries: {list(set(list(self.Mesh.boundary_nodes.keys()) + list(self.boundary_faces.keys())))}")
+                return
+
+            self.boundary_conditions[bc_name] = {
+                'BCType': BC[bc_name]['BCType'],
+                'Value': BC[bc_name]['Value'],
+                'typeOfExactSolution': BC[bc_name]['typeOfExactSolution']
+            }
+            print(f"Set BC on '{bc_name}': {BC[bc_name]['BCType']} = {BC[bc_name]['Value']}, typeOfExactSolution = {BC[bc_name]['typeOfExactSolution']}")
+
+    def set_volume_condition(self, volume_BC):
         """
         Set function for point-in-volume evaluation
 
@@ -165,8 +132,7 @@ class UnstructuredPoissonSolver:
         solver.set_boundary_condition("inlet", "neumann", lambda pos: pos[0])
         """
 
-        self.volume_condition = volume_fun
-        self.exactSolution = exactSolution
+        self.volume_condition = volume_BC
 
 
     def build_fv_system(self):
@@ -199,7 +165,6 @@ class UnstructuredPoissonSolver:
             neighbors = list(node_neighbors[i])
 
             if len(neighbors) == 0:
-                print("PDDDD")
                 # Isolated node
                 A[i, i] = 1.0
                 b[i] = 0.0
@@ -221,7 +186,7 @@ class UnstructuredPoissonSolver:
                         diag_val -= coeff
 
                 A[i, i] = diag_val
-                b[i] = self.volume_condition(self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], self.exactSolution)  # RHS = 0 for Laplace equation
+                b[i] = self.volume_condition["Value"](self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
 
         return A, b
     
@@ -265,12 +230,12 @@ class UnstructuredPoissonSolver:
 
                 bc_name = self.Mesh.BCsAssociatedToNode[i][0]
                 bc_data = self.boundary_conditions[bc_name]
-                if bc_data['type'] == 'neumann':
+                if bc_data['BCType'] == 'Neumann':
                     # Neumann BC: ∂φ/∂n = bc_value
                     # Approximate using one-sided difference
-                    if bc_data['value'] == 0: # Farfield
+                    if bc_data['Value'] == 0: # Farfield
                         bc_val = 0
-                    elif bc_data['value'] == 'normal':
+                    elif bc_data['Value'] == 'Normal':
                         bc_val = self.Mesh.boundaryNormal[i, component_idx]
                     else:
                         print("ERROR! Unrecognized boundary condition value!")
@@ -306,12 +271,12 @@ class UnstructuredPoissonSolver:
                         A[i, i] = -len(neighbors)/avg_dist
                         b[i] = bc_val
 
-                elif bc_data['type'] == 'dirichlet':
+                elif bc_data['BCType'] == 'Dirichlet':
                     # Dirichlet BC: φ = bc_value
-                    bc_val = bc_data['value']
+                    bc_val = bc_data['Value']
                     
                     if callable(bc_val):
-                        bc_val = bc_val(self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2])
+                        bc_val = bc_val(self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], bc_data["typeOfExactSolution"])
                     A[i, i] = 1.0
                     b[i] = bc_val
                     
@@ -337,7 +302,7 @@ class UnstructuredPoissonSolver:
         
         allNeumann = True
         for bc in self.boundary_conditions.keys():
-            if not self.boundary_conditions[bc]['type'] == 'neumann':
+            if not self.boundary_conditions[bc]['Value'] == 'Neumann':
                 allNeumann = False
 
         if allNeumann:
@@ -541,16 +506,14 @@ class UnstructuredPoissonSolver:
                 elem_type = elem_data['type']
                 connectivity = elem_data['connectivity']
 
-                # Skip boundary elements
-                if elem_type in [2, 3, 5, 7]:
-                    continue
-
                 # Map CGNS to meshio cell types
                 cell_type_map = {
                     10: ('tetra', 4),
                     17: ('hexahedron', 8),
                     12: ('pyramid', 5),
                     14: ('wedge', 6),
+                    5: ('triangle', 3),
+                    7: ('quad', 4),
                 }
 
                 if elem_type not in cell_type_map:
