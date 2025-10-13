@@ -540,7 +540,7 @@ class MeshClass:
 
 
         # Construct a dictionary of edges for each point that will have the area associated to it
-        ControlVolumesPerNode = np.zeros((self.n_nodes, 1), dtype=float)
+        ControlVolumesPerNode = np.zeros((self.n_nodes, ), dtype=float)
         ControlFaceDictPerEdge = {}
         for iNode in range(self.n_nodes):
 

@@ -684,6 +684,10 @@ class UnstructuredPoissonSolver:
                 cell_conn = connectivity
                 cells.append((cell_type, cell_conn))
 
+            # Append Control Volume information
+            if not self.UseApproximateLaplacianFormulation:
+                phi["DualControlVolume"] = self.Mesh.ControlVolumesPerNode
+
             # Create mesh
             mesh = meshio.Mesh(
                 points=self.Mesh.Nodes,

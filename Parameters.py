@@ -5,7 +5,7 @@ GridName= "BiggerCircle_Unstruct.cgns"
 nDim= 2
 
 exactSolution= "Parabolic_2D"
-caseName = "BiggerCircle_Unstruct_"+exactSolution + "_NoCVSolution"
+caseName = "BiggerCircle_Unstruct_"+exactSolution + "_CVSolution"
 
 def vol_condition(x, y, z, typeOfExactSolution="None"):
     if typeOfExactSolution == "Cosine_3D":
