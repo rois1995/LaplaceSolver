@@ -11,7 +11,7 @@ import numpy as np
 # solver = UnstructuredPoissonSolver("Sphere.cgns")
 # solver = UnstructuredPoissonSolver("SmallSphere.cgns")
 # solver = UnstructuredPoissonSolver("IsolatedCube.cgns")
-solver = UnstructuredPoissonSolver(options["GridName"], options["nDim"])
+solver = UnstructuredPoissonSolver(options)
 
 
 

@@ -1,22 +1,11 @@
 import numpy as np
 
 # GridName= "IsolatedCube_Unstr.cgns"
-GridName= "UnitSquare_Unstruct.cgns"
+GridName= "BiggerCircle_Unstruct.cgns"
 nDim= 2
 
 exactSolution= "Parabolic_2D"
-caseName = "UnitSquare_Unstruct_"+exactSolution
-
-
-
-# def vol_condition(x, y, z, exactSolution=False):
-#     if exactSolution:
-#         return 1
-#     else:
-#         return 0
-
-# def exact_dirichlet_boundary_condition(x, y, z):
-#     return (x**2+y**2+z**2)/6
+caseName = "BiggerCircle_Unstruct_"+exactSolution + "_NoCVSolution"
 
 def vol_condition(x, y, z, typeOfExactSolution="None"):
     if typeOfExactSolution == "Cosine_3D":
@@ -87,8 +76,10 @@ BlockName= "dom-1"
 # solverName='spsolve'
 
 
-solverName= "spsolve"
+solverName= "fgmres"
 solverOptions= {}
+
+UseApproximateLaplacianFormulation= False
 
 options = {
             'GridName': GridName,
@@ -98,5 +89,6 @@ options = {
             'BoundaryConditions': BoundaryConditions,
             'VolumeCondition': VolumeCondition, 
             'solverName': solverName, 
-            'solverOptions': solverOptions
+            'solverOptions': solverOptions,
+            'UseApproximateLaplacianFormulation': UseApproximateLaplacianFormulation
           }
