@@ -131,6 +131,7 @@ class MeshClass:
         self.cell_types = None
         self.ControlFaceDictPerEdge = {}
         self.ControlVolumesPerNode = None
+        self.boundaryCVArea = None
         
 
     def _compute_line_length(self, nodes):
@@ -139,6 +140,13 @@ class MeshClass:
         d1 = np.squeeze(nodes[:, 1, :]-nodes[:, 0, :])
 
         return np.linalg.norm(d1, axis=1)
+    
+    def _compute_CV_contrib_line(self, nodes):
+        """Compute boundary CV area for multiple lines"""
+        
+        lineLengths = self._compute_line_length(nodes)
+        return np.repeat(lineLengths[..., np.newaxis], 2, axis=1)/2
+    
 
     def _compute_single_line_length(self, nodes):
         """Compute length for single line"""
@@ -147,13 +155,37 @@ class MeshClass:
         return np.linalg.norm(d1)
     
     def _compute_tria_area(self, nodes):
-        """Compute area and for multiple triangles"""
+        """Compute area for multiple triangles"""
         print("Compute area for multiple triangles...")
 
         d1 = np.squeeze(nodes[:, 1, :]-nodes[:, 0, :])
         d2 = np.squeeze(nodes[:, 2, :]-nodes[:, 1, :])
 
         return 0.5*np.linalg.norm(np.cross(d1, d2, axis=1), axis=1)
+
+    
+    def _compute_CV_contrib_tria(self, nodes):
+        """Compute boundary CV area for multiple triangles"""
+        print("Compute area for multiple triangles...")
+
+        centroid = np.mean(nodes, axis=1)
+        edges_per_elem = self.EDGES_PER_ELEMENT.get(5, 0)
+        edgesConnections_per_elem = self.EDGESCONNECTIONS_PER_ELEMENT.get(5, 0)
+        edgeCentroids = np.mean(nodes[:, edges_per_elem, :], axis=2)
+
+        CVAreas = np.zeros((np.squeeze(nodes[:, :, 0]).size), dtype=float)
+        Points = np.zeros((len(nodes[:, 0, 0]), 4, 3))
+        Points[:, 2, :] = centroid
+
+        for iNode in range(3):
+            Points[:, 0, :] = nodes[:, iNode, :]
+            edges = edgesConnections_per_elem[iNode]
+            Points[:, 1, :] = nodes[:, edges[0], :]
+            Points[:, 3, :] = nodes[:, edges[1], :]
+            # Compute CVAreas
+            CVAreas[:, iNode] = self._compute_quad_area(Points)
+
+        return CVAreas
 
     def _compute_single_tria_area(self, nodes):
         """Compute area and for single triangle"""
@@ -177,6 +209,31 @@ class MeshClass:
             v = self._compute_tria_area(tria_nodes)
             volume += v
         return volume
+    
+
+    def _compute_CV_contrib_quad(self, nodes):
+        """Compute boundary CV area for multiple quads"""
+        print("Compute area for multiple quads...")
+
+        centroid = np.mean(nodes, axis=1)
+        edges_per_elem = self.EDGES_PER_ELEMENT.get(7, 0)
+        edgesConnections_per_elem = self.EDGESCONNECTIONS_PER_ELEMENT.get(7, 0)
+        edgeCentroids = np.mean(nodes[:, edges_per_elem, :], axis=2)
+
+        CVAreas = np.zeros((np.squeeze(nodes[:, :, 0]).size), dtype=float)
+        Points = np.zeros((len(nodes[:, 0, 0]), 4, 3))
+        Points[:, 2, :] = centroid
+
+        for iNode in range(3):
+            Points[:, 0, :] = nodes[:, iNode, :]
+            edges = edgesConnections_per_elem[iNode]
+            Points[:, 1, :] = nodes[:, edges[0], :]
+            Points[:, 3, :] = nodes[:, edges[1], :]
+            # Compute CVAreas
+            CVAreas[:, iNode] = self._compute_quad_area(Points)
+
+        return CVAreas
+    
     
     def _compute_tetra_volume(self, nodes):
         """Compute volume and center for tetrahedron"""
@@ -373,23 +430,26 @@ class MeshClass:
                         elem_type = self.ELEMENT_TYPES_FROM_NAMES[BCs[bc_name]['Elem_type']]
                         nPointsPerElement = self.NODES_PER_ELEMENT[elem_type]
                         connectivity = np.reshape(connectivity, (int(len(connectivity)/nPointsPerElement), nPointsPerElement))
-
-
+                        
                         if BCs[bc_name]['Elem_type'] == 'line':
                             normals = self._compute_normal_line(self.Nodes[connectivity])
                             areas = self._compute_line_length(self.Nodes[connectivity])
+                            CVAreas = self._compute_CV_contrib_line(self.Nodes[connectivity])
                         elif BCs[bc_name]['Elem_type'] == 'tri':
                             normals = self._compute_normal_tria(self.Nodes[connectivity])
                             areas = self._compute_tria_area(self.Nodes[connectivity])
+                            CVAreas = self._compute_CV_contrib_tria(self.Nodes[connectivity])
                         elif BCs[bc_name]['Elem_type'] == 'quad':
                             normals = self._compute_normal_quad(self.Nodes[connectivity])
                             areas = self._compute_quad_area(self.Nodes[connectivity])
+                            CVAreas = self._compute_CV_contrib_quad(self.Nodes[connectivity])
                         
                         self.boundary_nodes[bc_name] = {
                                                         'connectivity' : connectivity,
                                                         'normals': normals,
                                                         'areas': areas,
-                                                        'elem_type': BCs[bc_name]['Elem_type']
+                                                        'elem_type': BCs[bc_name]['Elem_type'],
+                                                        'BoundaryCVArea': CVAreas
                                                         }
                         self.boundary_faces[bc_name] = bc_name
                         print(f"  Boundary '{bc_name}': {len(connectivity)} nodes")
@@ -449,6 +509,7 @@ class MeshClass:
     def set_boundary_normals(self, boundary_conditions):
         # Now assign normals to boundary nodes
             boundaryNormal = np.zeros((len(self.Nodes), 3), dtype=float)
+            boundaryCVArea = np.zeros((len(self.Nodes), ), dtype=float)
             BCsAssociatedToNode = [[] for _ in range(self.n_nodes)]
             for iNode in range(self.n_nodes):
                 bnormal = np.zeros((1,3), dtype=float)
@@ -461,14 +522,14 @@ class MeshClass:
                             bc_name = bname
                             
                             if bname in boundary_conditions:
-                                bc_data = boundary_conditions[bname]
-                                if bc_data['Value'] == 'normal':
-                                    # it belongs to a wall 
-                                    
-                                    # Then search among all of the elements
-                                    boolForElementsWithPoint = (bnodes == iNode).any(axis=1)
-                                    normals2Include = bdict['normals'][boolForElementsWithPoint]
-                                    bnormal = np.vstack((bnormal, normals2Include))
+                                bc_data = boundary_conditions[bname]                                
+                                # Then search among all of the elements
+                                mask = (bnodes == iNode)
+                                boolForElementsWithPoint = (mask).any(axis=1)
+                                normals2Include = bdict['normals'][boolForElementsWithPoint]
+                                bnormal = np.vstack((bnormal, normals2Include))
+                                # print(bdict['BoundaryCVArea'][mask])
+                                boundaryCVArea[iNode] += np.sum(bdict['BoundaryCVArea'][mask])
                                 # else:
                                 #     if not bc_data['value'] == 0:
                                 #         print("ERROR! Boundary condition of type", bc_data['value'], "not recognized!")
@@ -483,6 +544,7 @@ class MeshClass:
 
             self.boundaryNormal = boundaryNormal
             self.BCsAssociatedToNode = BCsAssociatedToNode
+            self.boundaryCVArea = boundaryCVArea
 
     def compute_geometric_properties(self):
         """

@@ -212,7 +212,7 @@ class UnstructuredPoissonSolver:
         A = lil_matrix((N, N))
         b = np.zeros(N)
 
-        print(f"Building system on interior nodes ({len(np.where(self.Mesh.isNodeOnBoundary == False)[0])} nodes)...")
+        print(f"Building system on interior nodes ({N} nodes)...")
 
         node_neighbors = self.Mesh.NodesConnectedToNode
         ControlFaceDictPerEdge = self.Mesh.ControlFaceDictPerEdge
@@ -230,25 +230,20 @@ class UnstructuredPoissonSolver:
                 A[i, i] = 1.0
                 b[i] = 0.0
                 continue
-            
-            # if len(bcs) > 0:
-            #     print("Point", i, "of coords", self.nodes[i], "is on boundary", bcs, "and has normals")
-            #     print(bnormal)
 
-            if not self.Mesh.isNodeOnBoundary[i]:
-                # Interior node: standard Laplacian
-                # Approximate: ∇²φ ≈ Σ(φⱼ - φᵢ) / dᵢⱼ²
-                diag_val = 0.0
-                for j in neighbors:
-                    dist = np.linalg.norm(self.Mesh.Nodes[i] - self.Mesh.Nodes[j])
-                    controlAreaIJ = ControlFaceDictPerEdge[str(i)+"-"+str(j)]
-                    if dist > 1e-10:
-                        coeff = controlAreaIJ / (dist*controlVolume)
-                        A[i, j] = coeff
-                        diag_val -= coeff
+            # Interior node: standard Laplacian
+            # Approximate: ∇²φ ≈ Σ(φⱼ - φᵢ) / dᵢⱼ²
+            diag_val = 0.0
+            for j in neighbors:
+                dist = np.linalg.norm(self.Mesh.Nodes[i] - self.Mesh.Nodes[j])
+                controlAreaIJ = ControlFaceDictPerEdge[str(i)+"-"+str(j)]
+                if dist > 1e-10:
+                    coeff = controlAreaIJ / (dist*controlVolume)
+                    A[i, j] = coeff
+                    diag_val -= coeff
 
-                A[i, i] = diag_val
-                b[i] = self.volume_condition["Value"](self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
+            A[i, i] = diag_val
+            b[i] = self.volume_condition["Value"](self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
 
         return A, b
 
@@ -338,6 +333,7 @@ class UnstructuredPoissonSolver:
                     
                     if callable(bc_val):
                         bc_val = bc_val(self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], bc_data["typeOfExactSolution"])
+                    A[i, :] = 0.0
                     A[i, i] = 1.0
                     b[i] = bc_val
                     
@@ -367,73 +363,48 @@ class UnstructuredPoissonSolver:
         print(f"Applying Boundary Conditions for component {component_idx} ({len(np.where(self.Mesh.isNodeOnBoundary == True)[0])} nodes)...")
 
         node_neighbors = self.Mesh.NodesConnectedToNode
+        ControlVolumesPerNode = self.Mesh.ControlVolumesPerNode
 
         actualPoint = 0
 
         # Build Laplacian matrix
-        for i in range(N):
-            neighbors = list(node_neighbors[i])
+        for iBoundNode in np.where(self.Mesh.isNodeOnBoundary)[0]:
 
-            if self.Mesh.isNodeOnBoundary[i]:
+            if actualPoint%1000 == 0:
+                print("Imposing boundary conditions at point: ", iBoundNode)
 
-                if actualPoint%1000 == 0:
-                    print("Imposing boundary conditions at point: ", i)
-
-                bc_name = self.Mesh.BCsAssociatedToNode[i][0]
-                bc_data = self.boundary_conditions[bc_name]
-                if bc_data['BCType'] == 'Neumann':
-                    # Neumann BC: ∂φ/∂n = bc_value
-                    # Approximate using one-sided difference
+            bc_name = self.Mesh.BCsAssociatedToNode[iBoundNode][0]
+            BoundaryCVArea = self.Mesh.boundaryCVArea[iBoundNode]
+            bc_data = self.boundary_conditions[bc_name]
+            bNormal = self.Mesh.boundaryNormal[iBoundNode]
+            if bc_data['BCType'] == 'Neumann':
+                # Neumann BC: ∂φ/∂n = bc_value
+                # Approximate using one-sided difference
+                if callable(bc_data['Value']):
+                    bc_val = np.sum(bc_data['Value'](self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bc_data["typeOfExactSolution"])*bNormal)
+                else:
                     if bc_data['Value'] == 0: # Farfield
                         bc_val = 0
                     elif bc_data['Value'] == 'Normal':
-                        bc_val = self.Mesh.boundaryNormal[i, component_idx]
+                        bc_val = bNormal[component_idx]
                     else:
                         print("ERROR! Unrecognized boundary condition value!")
-                        exit(1)
+                        exit(1)          
 
-                    # Use neighboring nodes
-                    AreNeighborsOnBoundaries = self.Mesh.isNodeOnBoundary[neighbors]
-                    if not AreNeighborsOnBoundaries.all():
-                        actualNeighborsIndices = np.where(AreNeighborsOnBoundaries == False)[0]
-                        avg_dist = 0.0
-                        for iNeigh in actualNeighborsIndices:
-                            actualNeighbor = neighbors[iNeigh]
-                            dist = np.linalg.norm(self.Mesh.Nodes[i] - self.Mesh.Nodes[actualNeighbor, :])
-                            A[i, actualNeighbor] = 1.0/dist
-                            avg_dist += dist
+                b[iBoundNode] = -bc_val*BoundaryCVArea/ControlVolumesPerNode[iBoundNode]
 
-                        avg_dist /= len(actualNeighborsIndices)
-
-                        A[i, i] = -len(actualNeighborsIndices)/avg_dist
-                        b[i] = bc_val
-                    else:
-                        print("Problem! Point on the boundary with no neighbors inside the volume! Using boundary nodes")
-                        # print("Point ", i, "coordinates", self.nodes[i], "on boundary", bcs)
-                        A[i, i] = 1.0
-                        avg_dist = 0.0
-                        for iNeigh in neighbors:
-                            dist = np.linalg.norm(self.Mesh.Nodes[i] - self.Mesh.Nodes[iNeigh, :])
-                            A[i, iNeigh] = 1.0/dist
-                            avg_dist += dist
-
-                        avg_dist /= len(neighbors)
-
-                        A[i, i] = -len(neighbors)/avg_dist
-                        b[i] = bc_val
-
-                elif bc_data['BCType'] == 'Dirichlet':
-                    # Dirichlet BC: φ = bc_value
-                    bc_val = bc_data['Value']
-                    
-                    if callable(bc_val):
-                        bc_val = bc_val(self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], bc_data["typeOfExactSolution"])
-                    A[i, i] = 1.0
-                    b[i] = bc_val
-                    
-                actualPoint+= 1
-
-
+            elif bc_data['BCType'] == 'Dirichlet':
+                # Dirichlet BC: φ = bc_value
+                bc_val = bc_data['Value']
+                
+                if callable(bc_val):
+                    bc_val = bc_val(self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bc_data["typeOfExactSolution"])
+                A[iBoundNode, :] = 0.0
+                A[iBoundNode, iBoundNode] = 1.0
+                b[iBoundNode] = bc_val
+                
+            actualPoint+= 1
+        
         return A, b
 
 
@@ -454,7 +425,7 @@ class UnstructuredPoissonSolver:
         
         allNeumann = True
         for bc in self.boundary_conditions.keys():
-            if not self.boundary_conditions[bc]['Value'] == 'Neumann':
+            if not self.boundary_conditions[bc]['BCType'] == 'Neumann':
                 allNeumann = False
 
         if allNeumann:

@@ -5,7 +5,7 @@ GridName= "BiggerCircle_Unstruct.cgns"
 nDim= 2
 
 exactSolution= "Parabolic_2D"
-caseName = "BiggerCircle_Unstruct_"+exactSolution + "_CVSolution"
+caseName = "BiggerCircle_Unstruct_"+exactSolution + "_CVSolution_Neumann"
 
 def vol_condition(x, y, z, typeOfExactSolution="None"):
     if typeOfExactSolution == "Cosine_3D":
@@ -33,7 +33,30 @@ def exact_dirichlet_boundary_condition(x, y, z, typeOfExactSolution="None"):
         print("ERROR! Unknown Exact Solution!")
         exit(1)
 
-BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': exact_dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+def exact_neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
+    if typeOfExactSolution == "Cosine_3D":
+        return np.array([-2*np.pi*np.sin(2*np.pi*x) * np.cos(2*np.pi*y) * np.cos(2*np.pi*z),
+                -2*np.pi*np.cos(2*np.pi*x) * np.sin(2*np.pi*y) * np.cos(2*np.pi*z),
+                -2*np.pi*np.cos(2*np.pi*x) * np.cos(2*np.pi*y) * np.sin(2*np.pi*z)])
+    elif typeOfExactSolution == "Parabolic_3D":
+        return np.array([2*x/6,
+                2*y/6,
+                2*z/6])
+    elif typeOfExactSolution == "Cosine_2D":
+        return np.array([-2*np.pi*np.sin(2*np.pi*x) * np.cos(2*np.pi*y),
+                         -2*np.pi*np.cos(2*np.pi*x) * np.sin(2*np.pi*y),
+                         0])
+    elif typeOfExactSolution == "Parabolic_2D":
+        return np.array([2*x/4,
+                         2*y/4, 
+                         0])
+    else:
+        print("ERROR! Unknown Exact Solution!")
+        exit(1)
+
+
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': exact_dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': exact_neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 # BlockName= "blk-1"
 BlockName= "dom-1"
