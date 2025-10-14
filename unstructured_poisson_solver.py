@@ -545,10 +545,10 @@ class UnstructuredPoissonSolver:
             phi = self.solve_poisson(A, b, solver, useReordering, solverOptions, component_idx=component_idx)
             if self.allNeumann:
                 phi = phi[:-1]
-                A = A[:-1, :-1]
-                b = b[:-1]
+                residual = self.verify_solution(A[:-1, :-1], phi, b[:-1])
+            else:
+                residual = self.verify_solution(A, phi, b)
 
-            residual = self.verify_solution(A, phi, b)
             
             solutions[f'phi_{component_idx}'] = phi
             solutions[f'residual_phi_{component_idx}'] = residual

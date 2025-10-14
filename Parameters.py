@@ -1,11 +1,11 @@
 import numpy as np
 
 # GridName= "IsolatedCube_Unstr.cgns"
-GridName= "UnitSquare_Mixed.cgns"
+GridName= "SquareInSquare_Unstruct.cgns"
 nDim= 2
 
-exactSolution= "Parabolic_2D"
-caseName = "UnitSquare_Mixed_"+exactSolution + "_CVSolution"
+exactSolution= "None"
+caseName = "SquareInSquare_Unstruct_"+exactSolution + "_CVSolution_Neumann"
 
 def vol_condition(x, y, z, typeOfExactSolution="None"):
     if typeOfExactSolution == "Cosine_3D":
@@ -56,9 +56,9 @@ def neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
 
 
 # BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
-BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
-# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 'normal', 'typeOfExactSolution': exactSolution },
-#                       'Wall': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 'normal', 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 0, 'typeOfExactSolution': exactSolution },
+                      'Wall': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 'Normal', 'typeOfExactSolution': exactSolution }}
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 # BlockName= "blk-1"
 BlockName= "dom-1"

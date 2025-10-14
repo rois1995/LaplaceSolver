@@ -47,7 +47,7 @@ solver.construct_secondaryMeshStructures()
 
 
 # Or solve all three components
-solutions = solver.solve_components(components=[0], solver=options["solverName"], useReordering=False, solverOptions=options["solverOptions"])
+solutions = solver.solve_components(components=[0, 1], solver=options["solverName"], useReordering=False, solverOptions=options["solverOptions"])
 
 
 # Export to VTK for visualization in ParaView
