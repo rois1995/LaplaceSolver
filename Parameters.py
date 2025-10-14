@@ -1,11 +1,11 @@
 import numpy as np
 
 # GridName= "IsolatedCube_Unstr.cgns"
-GridName= "BiggerCircle_Unstruct.cgns"
+GridName= "UnitSquare_Mixed.cgns"
 nDim= 2
 
 exactSolution= "Parabolic_2D"
-caseName = "BiggerCircle_Unstruct_"+exactSolution + "_CVSolution_Neumann"
+caseName = "UnitSquare_Mixed_"+exactSolution + "_CVSolution"
 
 def vol_condition(x, y, z, typeOfExactSolution="None"):
     if typeOfExactSolution == "Cosine_3D":
@@ -20,7 +20,7 @@ def vol_condition(x, y, z, typeOfExactSolution="None"):
         print("ERROR! Unknown Exact Solution!")
         exit(1)
 
-def exact_dirichlet_boundary_condition(x, y, z, typeOfExactSolution="None"):
+def dirichlet_boundary_condition(x, y, z, typeOfExactSolution="None"):
     if typeOfExactSolution == "Cosine_3D":
         return np.cos(2*np.pi*x) * np.cos(2*np.pi*y) * np.cos(2*np.pi*z)
     elif typeOfExactSolution == "Parabolic_3D":
@@ -33,7 +33,7 @@ def exact_dirichlet_boundary_condition(x, y, z, typeOfExactSolution="None"):
         print("ERROR! Unknown Exact Solution!")
         exit(1)
 
-def exact_neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
+def neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
     if typeOfExactSolution == "Cosine_3D":
         return np.array([-2*np.pi*np.sin(2*np.pi*x) * np.cos(2*np.pi*y) * np.cos(2*np.pi*z),
                 -2*np.pi*np.cos(2*np.pi*x) * np.sin(2*np.pi*y) * np.cos(2*np.pi*z),
@@ -55,8 +55,10 @@ def exact_neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
         exit(1)
 
 
-# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': exact_dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
-BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': exact_neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 'normal', 'typeOfExactSolution': exactSolution },
+#                       'Wall': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 'normal', 'typeOfExactSolution': exactSolution }}
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 # BlockName= "blk-1"
 BlockName= "dom-1"

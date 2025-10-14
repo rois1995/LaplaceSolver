@@ -51,6 +51,7 @@ class UnstructuredPoissonSolver:
         self.nDim = options["nDim"]
         self.Mesh = MeshClass(options["GridName"], options["nDim"])
         self.UseApproximateLaplacianFormulation = options["UseApproximateLaplacianFormulation"]
+        self.allNeumann = False
 
     def read_cgns_unstructured(self, options):
         """
@@ -209,8 +210,8 @@ class UnstructuredPoissonSolver:
             RHS vector
         """
         N = self.Mesh.n_nodes  # Solve at nodes
-        A = lil_matrix((N, N))
-        b = np.zeros(N)
+        A = lil_matrix((N+int(self.allNeumann), N+int(self.allNeumann)))
+        b = np.zeros(N+int(self.allNeumann))
 
         print(f"Building system on interior nodes ({N} nodes)...")
 
@@ -244,6 +245,12 @@ class UnstructuredPoissonSolver:
 
             A[i, i] = diag_val
             b[i] = self.volume_condition["Value"](self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
+
+        if self.allNeumann:
+            A[-1, :] = 1
+            A[-1, -1] = 0
+            A[:-1, -1] = 1
+            b[-1] = 0
 
         return A, b
 
@@ -422,20 +429,7 @@ class UnstructuredPoissonSolver:
         phi : array
             Solution field at nodes
         """
-        
-        allNeumann = True
-        for bc in self.boundary_conditions.keys():
-            if not self.boundary_conditions[bc]['BCType'] == 'Neumann':
-                allNeumann = False
 
-        if allNeumann:
-            # Fix one node to remove null space for pure Neumann
-            A[0, :] = 0.0
-            A[0, 0] = 1.0  # Pin in the reordered system
-            b[0] = 0.0
-
-            print("Pinned node row:", A[0].toarray())
-            print("Pinned node RHS:", b[0])
 
         print("Convert matrix to CSR format")
         # Convert to CSR format
@@ -455,15 +449,6 @@ class UnstructuredPoissonSolver:
             # Step 4: Permute matrix and RHS
             A_rcm = A_csr[perm, :][:, perm]
             b_rcm = b[perm]
-
-            if allNeumann:
-                # Fix one node to remove null space for pure Neumann
-                A_rcm[0, :] = 0.0
-                A_rcm[0, 0] = 1.0  # Pin in the reordered system
-                b_rcm[0] = 0.0
-
-                print("Pinned node row:", A[0].toarray())
-                print("Pinned node RHS:", b[0])
 
             A_toSolve = A_rcm
             b_toSolve = b_rcm
@@ -513,6 +498,7 @@ class UnstructuredPoissonSolver:
             phi_reordered[perm] = phi
             phi = phi_reordered
 
+
         return phi
 
     def solve_components(self, components=[0], solver='spsolve', useReordering=False, solverOptions={}):
@@ -528,6 +514,13 @@ class UnstructuredPoissonSolver:
             Solutions for each component
         """
         solutions = {}
+
+
+        allNeumann = True
+        for bc in self.boundary_conditions.keys():
+            if not self.boundary_conditions[bc]['BCType'] == 'Neumann':
+                allNeumann = False
+        self.allNeumann = allNeumann
 
         # Compute geometric properties if not done
         # if self.cell_volumes is None:
@@ -550,6 +543,11 @@ class UnstructuredPoissonSolver:
             else:
                 A, b = self.apply_CV_BCs(A, b, component_idx=component_idx)
             phi = self.solve_poisson(A, b, solver, useReordering, solverOptions, component_idx=component_idx)
+            if self.allNeumann:
+                phi = phi[:-1]
+                A = A[:-1, :-1]
+                b = b[:-1]
+
             residual = self.verify_solution(A, phi, b)
             
             solutions[f'phi_{component_idx}'] = phi

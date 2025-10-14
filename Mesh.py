@@ -51,7 +51,7 @@ class MeshClass:
         17: [[1, 3, 4], [0, 2, 5], [1, 3, 6], [0, 2, 7], [0, 5, 7], [1, 4, 6], [2, 5, 7], [3, 4, 6]],   # HEXA_8  As per CGNS standard
     }
 
-    # Face shared by the same Node-to-node Connections per element for each type
+    # Face shared by the same Node Connections per element for each type
     FACESCONNECTIONS_PER_ELEMENT = {
         5: [[], [], []],    # TRI_3
         7: [[], [], [], []],    # QUAD_4
@@ -61,7 +61,7 @@ class MeshClass:
         17: [[], [], [], [], [], [], [], []],   # HEXA_8  As per CGNS standard
     }
 
-    # Edges shared by the same Node-to-node Connections per element for each type
+    # Edges shared by the same Node per element for each type
     EDGESCONNECTIONS_PER_ELEMENT = {
         5: [[0, 2], [0, 1], [1, 2]],    # TRI_3
         7: [[0, 3], [0, 1], [1, 2], [2, 3]],    # QUAD_4
@@ -669,8 +669,8 @@ class MeshClass:
                 elem_type = self.ELEMENT_TYPES_FROM_NAMES.get(cellName, 0)
                 edges_per_elem = self.EDGES_PER_ELEMENT.get(elem_type, 0)
                 edgesconnections_per_elem = self.EDGESCONNECTIONS_PER_ELEMENT.get(elem_type, 0)[iNodeInElement]
+                connectivity = self.Elements[cellName]['connectivity'][iCell]
 
-                Element = self.Elements[cellName]["connectivity"][iCell, :]
                 CellCenter = self.Elements[cellName]["CellCenters"][iCell]
 
                 # Cycle on each edge that is shared by the node. Just 2D grids for now
@@ -684,7 +684,7 @@ class MeshClass:
                     # Now compute face area
                     line = np.vstack((CellCenter, edgeCentroid))
                     faceAreaContrib = self._compute_single_line_length(line)
-                    edgeName = "-".join(map(str, connectivity[iCell, edges_per_elem[edge]]))
+                    edgeName = "-".join(map(str, connectivity[edges_per_elem[edge]]))
                     ControlFaceDictPerEdge[edgeName] += faceAreaContrib
         
         AlreadyProcessed = {}
