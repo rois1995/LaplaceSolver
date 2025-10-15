@@ -3,12 +3,12 @@ import numpy as np
 verbose=False
 
 GridName= "Mesh.cgns"
-nDim= 2
-BlockName= "dom-1"
+nDim= 3
+BlockName= "blk-1"
 
 debug=1
 
-exactSolution= "Cosine_2D"
+exactSolution= "Cosine_3D"
 caseName = exactSolution + "_CVSolution_Neumann"
 
 def vol_condition(x, y, z, typeOfExactSolution="None"):
@@ -59,7 +59,8 @@ def neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
         exit(1)
 
 
-BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
+BoundaryConditions= { 'tri_Farfield': {'Elem_type': 'tri', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution },
+                      'quad_Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
 
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 

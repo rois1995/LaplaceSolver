@@ -163,7 +163,8 @@ class UnstructuredPoissonSolver:
 
         node_neighbors = self.Mesh.NodesConnectedToNode
         ControlFaceDictPerEdge = self.Mesh.ControlFaceDictPerEdge
-        ControlFaceNormalDictPerEdge = self.Mesh.ControlFaceNormalDictPerEdge
+        if self.nDim == 2:
+            ControlFaceNormalDictPerEdge = self.Mesh.ControlFaceNormalDictPerEdge
         ControlVolumesPerNode = self.Mesh.ControlVolumesPerNode
         # Build Laplacian matrix
         for i in range(N):
@@ -186,10 +187,10 @@ class UnstructuredPoissonSolver:
                 distVec = self.Mesh.Nodes[j] - self.Mesh.Nodes[i]
                 dist = np.linalg.norm(distVec)
                 controlAreaIJ = ControlFaceDictPerEdge[str(i)+"-"+str(j)]
-                faceNormalIJ = ControlFaceNormalDictPerEdge[str(i)+"-"+str(j)]
-                proj = np.sum(distVec*faceNormalIJ)/dist
-                if self.nDim == 3:
-                    proj=1
+                proj=1
+                if self.nDim == 2:
+                    faceNormalIJ = ControlFaceNormalDictPerEdge[str(i)+"-"+str(j)]
+                    proj = np.sum(distVec*faceNormalIJ)/dist
                 if dist > 1e-10:
                     coeff = controlAreaIJ * proj/ (dist*controlVolume)
                     A[i, j] = coeff

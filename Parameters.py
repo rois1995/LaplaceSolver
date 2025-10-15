@@ -68,7 +68,10 @@ def neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
 
 # BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
 # BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
-BoundaryConditions= { 'Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'tri', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+BoundaryConditions= { 'tri_Farfield': {'Elem_type': 'tri', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution },
+                      'quad_Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
 
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 

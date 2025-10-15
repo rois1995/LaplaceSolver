@@ -56,9 +56,14 @@ class MeshClass:
     EDGESOFPOINTS_PER_ELEMENT = {
         5: [[0, 2], [0, 1], [1, 2]],    # TRI_3
         7: [[0, 3], [0, 1], [1, 2], [2, 3]],    # QUAD_4
-        10: [[], [], [], []],   # TETRA_4
+
+        10: [[0, 2, 3], [0, 1, 4], [1, 2, 5], [3, 4, 5]],   # TETRA_4
+
         12: [[], [], [], [], []],   # PYRA_5
-        14: [[], [], [], [], [], []],   # PENTA_6
+
+        14: [[0, 2, 6], [0, 1, 7], [1, 2, 8], 
+             [3, 5, 6], [3, 4, 7], [4, 5, 8]],   # PENTA_6
+
         17: [[0, 4, 11], [0, 1, 8], [1, 2, 9], [2, 3, 10], 
              [5, 8, 11], [5, 6, 8], [6, 7, 9], [7, 8, 10]],   # HEXA_8  As per CGNS standard
     }
@@ -67,10 +72,17 @@ class MeshClass:
     EDGES_PER_ELEMENT = {
         5: [[0, 1], [1, 2], [2, 0]],    # TRI_3
         7: [[0, 1], [1, 2], [2, 3], [3, 0]],    # QUAD_4
-        10: [],   # TETRA_4
+
+        10: [[0, 1], [1, 2], [2, 0],
+             [0, 3], [1, 3], [2, 3]],   # TETRA_4
+
         12: [[0, 1], [1, 2], [2, 3], [3, 0],
              [0, 4], [1, 4], [2, 4], [3, 4]],   # PYRA_5
-        14: [],   # PENTA_6
+
+        14: [[0, 1], [1, 2], [2, 0],
+             [3, 4], [4, 5], [5, 3],
+             [0, 3], [1, 4], [2, 5]],   # PENTA_6
+
         17: [[0, 1], [1, 2], [2, 3], [3, 0], 
              [4, 5], [5, 6], [6, 7], [7, 4], 
              [1, 5], [2, 6], [3, 7], [0, 4]],   # HEXA_8
@@ -82,9 +94,13 @@ class MeshClass:
     FACES_PER_ELEMENT = {
         5: [],    # TRI_3
         7: [],    # QUAD_4
-        10: [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],   # TETRA_4
+
+        10: [[0, 1, 2], [0, 1, 3], [2, 0, 3], [1, 2, 3]],   # TETRA_4
+
         12: [[0, 1, 2, 3], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]],   # PYRA_5
-        14: [],   # PENTA_6
+
+        14: [[0, 1, 4, 3], [1, 2, 5, 4], [2, 0, 3, 5], [0, 2, 1], [4, 5, 3]],   # PENTA_6
+
         17: [[0, 1, 2, 3], [0, 1, 5, 4], [0, 4, 7, 3], [1, 2, 6, 5],
              [4, 5, 6, 7], [2, 3, 7, 6]],   # HEXA_8
     }
@@ -94,10 +110,13 @@ class MeshClass:
     FACESOFEDGES_PER_ELEMENT = {
         5: [],    # TRI_3
         7: [],    # QUAD_4
-        10: [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],   # TETRA_4
+        10: [[0, 1], [0, 3], [0, 2],
+             [1, 2], [1, 3], [2, 3]],   # TETRA_4
         12: [[], [], [], [],
              [], [], [], []],   # PYRA_5
-        14: [],   # PENTA_6
+        14: [[0, 3], [1, 3], [2, 3],
+             [0, 4], [1, 4], [2, 4],
+             [0, 2], [0, 1], [1, 2]],   # PENTA_6
         17: [[0, 1], [0, 3], [0, 5], [0, 2], 
              [4, 1], [4, 3], [4, 5], [4, 4], 
              [1, 3], [3, 5], [2, 5], [1, 2]],   # HEXA_8
@@ -660,10 +679,6 @@ class MeshClass:
 
             self.Elements[section_name]["edgeCentroids"] = edgeCentroids
 
-            faces_per_elem = self.FACES_PER_ELEMENT.get(elem_type, 0)
-            faceCentroids = np.mean(ElementNodes[:, faces_per_elem, :], axis=2)
-            self.Elements[section_name]["FaceCentroids"] = faceCentroids
-
             facesOfEdges = self.FACESOFEDGES_PER_ELEMENT.get(elem_type, 0)
             
             SectionalAreaOfEdges = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem)), dtype=float)
@@ -796,7 +811,12 @@ class MeshClass:
             self.Elements[section_name]["edgeCentroids"] = edgeCentroids
 
             faces_per_elem = self.FACES_PER_ELEMENT.get(elem_type, 0)
-            faceCentroids = np.mean(ElementNodes[:, faces_per_elem, :], axis=2)
+            faceCentroids = np.zeros((len(connectivity[:, 0]), len(faces_per_elem)), dtype=float)
+            print(faceCentroids.shape)
+            for iFace, face in enumerate(faces_per_elem):
+                print(ElementNodes[:, face, :].shape)
+                exit(1)
+                faceCentroids[:, iFace] = np.mean(ElementNodes[:, face, :], axis=1)
             self.Elements[section_name]["FaceCentroids"] = faceCentroids
 
             facesOfEdges = self.FACESOFEDGES_PER_ELEMENT.get(elem_type, 0)
