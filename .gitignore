@@ -211,3 +211,5 @@ __marimo__/
 *vt*
 *.pw
 *.su2
+*.npy
+

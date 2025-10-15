@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "Main.py", line 1, in <module>
+    from unstructured_poisson_solver import UnstructuredPoissonSolver
+  File "/media/rausa/4TB/LaplaceSolver/unstructured_poisson_solver.py", line 11, in <module>
+    from scipy.sparse import lil_matrix, csr_matrix
+ModuleNotFoundError: No module named 'scipy'

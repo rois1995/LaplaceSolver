@@ -23,7 +23,7 @@ class UnstructuredPoissonSolver:
     Supports tetrahedra, hexahedra, pyramids, and prisms
     """
 
-    def __init__(self, options):
+    def __init__(self, options, Logger):
         """
         Initialize solver
 
@@ -49,26 +49,27 @@ class UnstructuredPoissonSolver:
         self.BCsAssociatedToNode = None
         self.node_neighbors = None
         self.nDim = options["nDim"]
-        self.Mesh = MeshClass(options["GridName"], options["nDim"])
-        self.UseApproximateLaplacianFormulation = options["UseApproximateLaplacianFormulation"]
+        self.Mesh = MeshClass(Logger, options["GridName"], options["nDim"])
         self.allNeumann = False
+        self.debug = options["debug"]
+        self.Logger = Logger
 
     def read_cgns_unstructured(self, options):
         """
         Read unstructured CGNS grid with mixed element types
         Compatible with NumPy 2.0
         """
-        print(f"Reading CGNS file: {self.GridFileName}")
+        self.Logger.info(f"Reading CGNS file: {self.GridFileName}")
 
         try:
             self.Mesh._read_cgns_h5py(options["BlockName"], options["BoundaryConditions"])
         except Exception as e:
-            print(f"h5py read failed: {e}")
-            raise RuntimeError("Failed to read CGNS file.")
+            self.Logger.error(f"h5py read failed: {e}. Failed to read CGNS file!")
+            raise 
         
     def construct_secondaryMeshStructures(self):
         
-        print(f"Constructing secondary mesh structures...")
+        self.Logger.info(f"Constructing secondary mesh structures...")
 
         self.Mesh.construct_secondaryMeshStructures(self.boundary_conditions)
 
@@ -103,8 +104,8 @@ class UnstructuredPoissonSolver:
         for bc_name in BC.keys():
 
             if bc_name not in self.Mesh.boundary_nodes and bc_name not in self.Mesh.boundary_faces:
-                print(f"Warning: Boundary '{bc_name}' not found in grid")
-                print(f"Available boundaries: {list(set(list(self.Mesh.boundary_nodes.keys()) + list(self.boundary_faces.keys())))}")
+                self.Logger.info(f"Warning: Boundary '{bc_name}' not found in grid")
+                self.Logger.info(f"Available boundaries: {list(set(list(self.Mesh.boundary_nodes.keys()) + list(self.boundary_faces.keys())))}")
                 return
 
             self.boundary_conditions[bc_name] = {
@@ -112,7 +113,7 @@ class UnstructuredPoissonSolver:
                 'Value': BC[bc_name]['Value'],
                 'typeOfExactSolution': BC[bc_name]['typeOfExactSolution']
             }
-            print(f"Set BC on '{bc_name}': {BC[bc_name]['BCType']} = {BC[bc_name]['Value']}, typeOfExactSolution = {BC[bc_name]['typeOfExactSolution']}")
+            self.Logger.info(f"Set BC on '{bc_name}': {BC[bc_name]['BCType']} = {BC[bc_name]['Value']}, typeOfExactSolution = {BC[bc_name]['typeOfExactSolution']}")
 
     def set_volume_condition(self, volume_BC):
         """
@@ -137,62 +138,6 @@ class UnstructuredPoissonSolver:
         self.volume_condition = volume_BC
 
 
-    def build_approx_fv_system(self):
-        """
-        Build finite volume system for Poisson equation using node-based approach
-
-        Parameters:
-        -----------
-        component_idx : int
-            Component index (1, 2, or 3)
-
-        Returns:
-        --------
-        A : sparse matrix
-            System matrix
-        b : array
-            RHS vector
-        """
-        N = self.Mesh.n_nodes  # Solve at nodes
-        A = lil_matrix((N, N))
-        b = np.zeros(N)
-
-        print(f"Building system on interior nodes ({len(np.where(self.Mesh.isNodeOnBoundary == False)[0])} nodes)...")
-
-        node_neighbors = self.Mesh.NodesConnectedToNode
-        # Build Laplacian matrix
-        for i in range(N):
-            if i%10000 == 0:
-                print("Assembling matrix at point: ", i)
-            neighbors = list(node_neighbors[i])
-
-            if len(neighbors) == 0:
-                # Isolated node
-                A[i, i] = 1.0
-                b[i] = 0.0
-                continue
-            
-            # if len(bcs) > 0:
-            #     print("Point", i, "of coords", self.nodes[i], "is on boundary", bcs, "and has normals")
-            #     print(bnormal)
-
-            if not self.Mesh.isNodeOnBoundary[i]:
-                # Interior node: standard Laplacian
-                # Approximate: ∇²φ ≈ Σ(φⱼ - φᵢ) / dᵢⱼ²
-                diag_val = 0.0
-                for j in neighbors:
-                    dist = np.linalg.norm(self.Mesh.Nodes[i] - self.Mesh.Nodes[j])
-                    if dist > 1e-10:
-                        coeff = 1.0 / dist**2
-                        A[i, j] = coeff
-                        diag_val -= coeff
-
-                A[i, i] = diag_val
-                b[i] = self.volume_condition["Value"](self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
-
-        return A, b
-    
-
     def build_CV_fv_system(self):
         """
         Build finite volume system for Poisson equation using node-based approach
@@ -213,7 +158,7 @@ class UnstructuredPoissonSolver:
         A = lil_matrix((N+int(self.allNeumann), N+int(self.allNeumann)))
         b = np.zeros(N+int(self.allNeumann))
 
-        print(f"Building system on interior nodes ({N} nodes)...")
+        self.Logger.info(f"Building system on interior nodes ({N} nodes)...")
 
         node_neighbors = self.Mesh.NodesConnectedToNode
         ControlFaceDictPerEdge = self.Mesh.ControlFaceDictPerEdge
@@ -221,7 +166,7 @@ class UnstructuredPoissonSolver:
         # Build Laplacian matrix
         for i in range(N):
             if i%10000 == 0:
-                print("Assembling matrix at point: ", i)
+                self.Logger.info(f"Assembling matrix at point: {i}")
             neighbors = list(node_neighbors[i])
 
             controlVolume = ControlVolumesPerNode[i]
@@ -257,98 +202,6 @@ class UnstructuredPoissonSolver:
 
 
 
-
-    def apply_approx_BCs(self, A, b, component_idx=1):
-        """
-        Build finite volume system for Poisson equation using node-based approach
-
-        Parameters:
-        -----------
-        component_idx : int
-            Component index (1, 2, or 3)
-
-        Returns:
-        --------
-        A : sparse matrix
-            System matrix
-        b : array
-            RHS vector
-        """
-        N = self.Mesh.n_nodes  # Solve at nodes
-
-        print(f"Applying Boundary Conditions for component {component_idx} ({len(np.where(self.Mesh.isNodeOnBoundary == True)[0])} nodes)...")
-
-        node_neighbors = self.Mesh.NodesConnectedToNode
-
-        actualPoint = 0
-
-        # Build Laplacian matrix
-        for i in range(N):
-            neighbors = list(node_neighbors[i])
-
-            if self.Mesh.isNodeOnBoundary[i]:
-
-                if actualPoint%1000 == 0:
-                    print("Imposing boundary conditions at point: ", i)
-
-                bc_name = self.Mesh.BCsAssociatedToNode[i][0]
-                bc_data = self.boundary_conditions[bc_name]
-                if bc_data['BCType'] == 'Neumann':
-                    # Neumann BC: ∂φ/∂n = bc_value
-                    # Approximate using one-sided difference
-                    if bc_data['Value'] == 0: # Farfield
-                        bc_val = 0
-                    elif bc_data['Value'] == 'Normal':
-                        bc_val = self.Mesh.boundaryNormal[i, component_idx]
-                    else:
-                        print("ERROR! Unrecognized boundary condition value!")
-                        exit(1)
-
-                    # Use neighboring nodes
-                    AreNeighborsOnBoundaries = self.Mesh.isNodeOnBoundary[neighbors]
-                    if not AreNeighborsOnBoundaries.all():
-                        actualNeighborsIndices = np.where(AreNeighborsOnBoundaries == False)[0]
-                        avg_dist = 0.0
-                        for iNeigh in actualNeighborsIndices:
-                            actualNeighbor = neighbors[iNeigh]
-                            dist = np.linalg.norm(self.Mesh.Nodes[i] - self.Mesh.Nodes[actualNeighbor, :])
-                            A[i, actualNeighbor] = 1.0/dist
-                            avg_dist += dist
-
-                        avg_dist /= len(actualNeighborsIndices)
-
-                        A[i, i] = -len(actualNeighborsIndices)/avg_dist
-                        b[i] = bc_val
-                    else:
-                        print("Problem! Point on the boundary with no neighbors inside the volume! Using boundary nodes")
-                        # print("Point ", i, "coordinates", self.nodes[i], "on boundary", bcs)
-                        A[i, i] = 1.0
-                        avg_dist = 0.0
-                        for iNeigh in neighbors:
-                            dist = np.linalg.norm(self.Mesh.Nodes[i] - self.Mesh.Nodes[iNeigh, :])
-                            A[i, iNeigh] = 1.0/dist
-                            avg_dist += dist
-
-                        avg_dist /= len(neighbors)
-
-                        A[i, i] = -len(neighbors)/avg_dist
-                        b[i] = bc_val
-
-                elif bc_data['BCType'] == 'Dirichlet':
-                    # Dirichlet BC: φ = bc_value
-                    bc_val = bc_data['Value']
-                    
-                    if callable(bc_val):
-                        bc_val = bc_val(self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], bc_data["typeOfExactSolution"])
-                    A[i, :] = 0.0
-                    A[i, i] = 1.0
-                    b[i] = bc_val
-                    
-                actualPoint+= 1
-
-
-        return A, b
-    
     def apply_CV_BCs(self, A, b, component_idx=1):
         """
         Build finite volume system for Poisson equation using node-based approach
@@ -367,9 +220,8 @@ class UnstructuredPoissonSolver:
         """
         N = self.Mesh.n_nodes  # Solve at nodes
 
-        print(f"Applying Boundary Conditions for component {component_idx} ({len(np.where(self.Mesh.isNodeOnBoundary == True)[0])} nodes)...")
+        self.Logger.info(f"Applying Boundary Conditions for component {component_idx} ({len(np.where(self.Mesh.isNodeOnBoundary == True)[0])} nodes)...")
 
-        node_neighbors = self.Mesh.NodesConnectedToNode
         ControlVolumesPerNode = self.Mesh.ControlVolumesPerNode
 
         actualPoint = 0
@@ -378,7 +230,7 @@ class UnstructuredPoissonSolver:
         for iBoundNode in np.where(self.Mesh.isNodeOnBoundary)[0]:
 
             if actualPoint%1000 == 0:
-                print("Imposing boundary conditions at point: ", iBoundNode)
+                self.Logger.info(f"Imposing boundary conditions at point: {iBoundNode}")
 
             bc_name = self.Mesh.BCsAssociatedToNode[iBoundNode][0]
             BoundaryCVArea = self.Mesh.boundaryCVArea[iBoundNode]
@@ -395,7 +247,7 @@ class UnstructuredPoissonSolver:
                     elif bc_data['Value'] == 'Normal':
                         bc_val = bNormal[component_idx]
                     else:
-                        print("ERROR! Unrecognized boundary condition value!")
+                        self.Logger.error("ERROR! Unrecognized boundary condition value!")
                         exit(1)          
 
                 b[iBoundNode] = -bc_val*BoundaryCVArea/ControlVolumesPerNode[iBoundNode]
@@ -411,7 +263,7 @@ class UnstructuredPoissonSolver:
                 b[iBoundNode] = bc_val
                 
             actualPoint+= 1
-        
+                
         return A, b
 
 
@@ -431,7 +283,7 @@ class UnstructuredPoissonSolver:
         """
 
 
-        print("Convert matrix to CSR format")
+        self.Logger.info("Convert matrix to CSR format")
         # Convert to CSR format
         A_csr = csr_matrix(A)
         # np.set_printoptions(threshold=sys.maxsize)
@@ -442,7 +294,7 @@ class UnstructuredPoissonSolver:
 
         if useReordering:
 
-            print("Apply Reverse Cuthill-Mckee ordering")
+            self.Logger.info("Apply Reverse Cuthill-Mckee ordering")
             # Example usage in your solver (add before calling GMRES/SPSOLVE):
             perm = reverse_cuthill_mckee(A_csr, symmetric_mode=True)  # Or A_csr/b
 
@@ -464,34 +316,34 @@ class UnstructuredPoissonSolver:
 
         diag = A_toSolve.diagonal()
         if np.any(diag == 0):
-            print(f"Warning: There are {len(np.where(diag==0)[0])} zeros on the diagonal!")
-            print(np.where(diag==0)[0][0])
+            self.Logger.info(f"Warning: There are {len(np.where(diag==0)[0])} zeros on the diagonal!")
+            self.Logger.info(f"Indexes where this happens: {np.where(diag==0)[0][0]}")
 
         # Solve
-        print(f"Solving linear system...")
+        self.Logger.info(f"Solving linear system...")
 
         if solver == 'spsolve':
-            print("Using spsolve function (direct solver)")
+            self.Logger.info("Using spsolve function (direct solver)")
             try:
                 phi = spsolve(A_toSolve, b_toSolve)
             except Exception as e:
-                print(f"Direct solve failed: {e}")
-                print("Trying iterative solver...")
+                self.Logger.error(f"Direct solve failed: {e}")
+                self.Logger.info("Trying iterative solver...")
                 phi = self.gmres_solver(A_toSolve, b_toSolve, solverOptions)
         elif solver == 'gmres':
-            print("Using GMRES (iterative solver)")
+            self.Logger.info("Using GMRES (iterative solver)")
             phi = self.gmres_solver(A_toSolve, b_toSolve, solverOptions)
         elif solver == 'fgmres':
-            print("Using FGMRES (iterative solver)")
+            self.Logger.info("Using FGMRES (iterative solver)")
             phi = self.fgmres_solver(A_toSolve, b_toSolve, solverOptions)
         elif solver == 'bicgstab':
-            print("Using BiCGSTAB (iterative solver)")
+            self.Logger.info("Using BiCGSTAB (iterative solver)")
             phi = self.bicgstab_solver(A_toSolve, b_toSolve, solverOptions)
         elif solver == 'minres':
-            print("Using MinRES (iterative solver)")
+            self.Logger.info("Using MinRES (iterative solver)")
             phi = self.minres_solver(A_toSolve, b_toSolve, solverOptions)
 
-        print(f"Solution range: [{phi.min():.6e}, {phi.max():.6e}]")
+        self.Logger.info(f"Solution range: [{phi.min():.6e}, {phi.max():.6e}]")
 
         if useReordering:
             phi_reordered = np.empty_like(phi)
@@ -526,22 +378,16 @@ class UnstructuredPoissonSolver:
         # if self.cell_volumes is None:
         #     self.compute_geometric_properties()
 
-        # Build system
-        if self.UseApproximateLaplacianFormulation:
-            A, b = self.build_approx_fv_system()
-        else:
-            self.Mesh.build_DualControlVolumes()
-            A, b = self.build_CV_fv_system()
+        
+        self.Mesh.build_DualControlVolumes()
+        A, b = self.build_CV_fv_system()
             # exit(1)
 
         for component_idx in components:
-            print(f"\n{'='*60}")
-            print(f"Solving component {component_idx}")
-            print('='*60)
-            if self.UseApproximateLaplacianFormulation:
-                A, b = self.apply_approx_BCs(A, b, component_idx=component_idx)
-            else:
-                A, b = self.apply_CV_BCs(A, b, component_idx=component_idx)
+            self.Logger.info(f"\n{'='*60}")
+            self.Logger.info(f"Solving component {component_idx}")
+            self.Logger.info('='*60)
+            A, b = self.apply_CV_BCs(A, b, component_idx=component_idx)
             phi = self.solve_poisson(A, b, solver, useReordering, solverOptions, component_idx=component_idx)
             if self.allNeumann:
                 phi = phi[:-1]
@@ -571,9 +417,9 @@ class UnstructuredPoissonSolver:
         residual_norm = np.linalg.norm(residual)
         relative_residual = residual_norm / (np.linalg.norm(b) + 1e-12)
         
-        print(f"Residual norm: {residual_norm:.6e}")
-        print(f"Relative residual: {relative_residual:.6e}")
-        print(f"Max residual: {np.abs(residual).max():.6e}")
+        self.Logger.info(f"Residual norm: {residual_norm:.6e}")
+        self.Logger.info(f"Relative residual: {relative_residual:.6e}")
+        self.Logger.info(f"Max residual: {np.abs(residual).max():.6e}")
         
         return residual
     
@@ -583,14 +429,14 @@ class UnstructuredPoissonSolver:
         For pure Neumann: sum(b) should be ~0
         """
         b_sum = np.sum(b)
-        print(f"RHS sum (should be ~0 for Neumann): {b_sum:.6e}")
+        prself.Logger.infoint(f"RHS sum (should be ~0 for Neumann): {b_sum:.6e}")
         
         # Project RHS orthogonal to constant null space
         N = len(b)
         b_mean = np.mean(b)
         b_corrected = b - b_mean
         
-        print(f"RHS mean removed: {b_mean:.6e}")
+        self.Logger.info(f"RHS mean removed: {b_mean:.6e}")
         return b_corrected
     
     def verify_null_space_removed(self, A, b):
@@ -603,14 +449,14 @@ class UnstructuredPoissonSolver:
         # A*ones should NOT be ~0 if null space is removed
         A_ones = A @ ones
         
-        print(f"||A*ones|| = {np.linalg.norm(A_ones):.6e}")
+        self.Logger.info(f"||A*ones|| = {np.linalg.norm(A_ones):.6e}")
         
         if np.linalg.norm(A_ones) < 1e-10:
-            print("ERROR: Null space NOT removed! A*ones = 0")
-            print("The pinned node constraint is not working.")
+            self.Logger.error("ERROR: Null space NOT removed! A*ones = 0")
+            self.Logger.info("The pinned node constraint is not working.")
             return False
         else:
-            print("Good: Null space appears removed")
+            self.Logger.info("Good: Null space appears removed")
             return True
 
     def export_solution_vtk(self, phi, output_file):
@@ -654,8 +500,11 @@ class UnstructuredPoissonSolver:
                 cells.append((cell_type, cell_conn))
 
             # Append Control Volume information
-            if not self.UseApproximateLaplacianFormulation:
-                phi["DualControlVolume"] = self.Mesh.ControlVolumesPerNode
+            phi["DualControlVolume"] = self.Mesh.ControlVolumesPerNode
+            if self.debug:
+                phi["Normal_X"] = self.Mesh.boundaryNormal[:, 0]
+                phi["Normal_Y"] = self.Mesh.boundaryNormal[:, 1]
+                phi["Normal_Z"] = self.Mesh.boundaryNormal[:, 2]
 
             # Create mesh
             mesh = meshio.Mesh(
@@ -665,16 +514,16 @@ class UnstructuredPoissonSolver:
             )
 
             mesh.write(output_file)
-            print(f"Solution exported to {output_file}")
+            self.Logger.info(f"Solution exported to {output_file}")
 
         except ImportError:
-            print("meshio not available. Install with: pip install meshio")
-            print("Saving as NumPy array instead...")
+            self.Logger.error("meshio not available. Install with: pip install meshio")
+            self.Logger.info("Saving as NumPy array instead...")
             np.save(output_file.replace('.vtu', '.npy'), phi)
-            print(f"Solution saved to {output_file.replace('.vtu', '.npy')}")
+            self.Logger.info(f"Solution saved to {output_file.replace('.vtu', '.npy')}")
         except Exception as e:
-            print(f"Error exporting to VTK: {e}")
-            print("Saving as NumPy array instead...")
+            self.Logger.error(f"Error exporting to VTK: {e}")
+            self.Logger.info("Saving as NumPy array instead...")
             np.save(output_file.replace('.vtu', '.npy'), phi)
 
 
@@ -704,25 +553,25 @@ class UnstructuredPoissonSolver:
         M = None
         if use_ilu:
             try:
-                print("Building ILU preconditioner...")
+                self.Logger.info("Building ILU preconditioner...")
                 ilu = spilu(A.tocsc(), fill_factor=10, drop_tol=1e-4)
                 M = LinearOperator(A.shape, ilu.solve)
-                print("ILU: SUCCESS")
+                self.Logger.info("ILU: SUCCESS")
             except Exception as e:
-                print(f"ILU failed: {e}, solving without preconditioner")
+                self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
                 M = None
         
 
         callback = None
         if verbose:
-            callback = self.UnifiedVerboseCallback(A, b)
+            callback = self.UnifiedVerboseCallback(A, b, self.Logger)
 
         # Initial guess (not zeros for Neumann problems)
         x0 = np.random.randn(len(b))
         x0 = x0 - np.mean(x0)  # Remove constant component
 
 
-        print("Starting BiCGSTAB...")
+        self.Logger.info("Starting BiCGSTAB...")
         x, info = bicgstab(A, b, 
                         x0=x0,
                         tol=tol, 
@@ -731,19 +580,19 @@ class UnstructuredPoissonSolver:
                         callback=callback)
 
         # Check result
-        print(f"\nBiCGSTAB finished")
+        self.Logger.info(f"\nBiCGSTAB finished")
         
         if info == 0:
-            print("✓ SUCCESS: Converged to tolerance")
+            self.Logger.info("✓ SUCCESS: Converged to tolerance")
             residual = np.linalg.norm(A @ x - b)
-            print(f"Final residual: {residual:.6e}")
+            self.Logger.info(f"Final residual: {residual:.6e}")
         elif info > 0:
-            print(f"✗ FAILURE: Did not converge in {info} iterations")
+            self.Logger.info(f"✗ FAILURE: Did not converge in {info} iterations")
             residual = np.linalg.norm(A @ x - b)
-            print(f"Final residual: {residual:.6e}")
-            print("Solution is NOT reliable - use direct solver instead")
+            self.Logger.info(f"Final residual: {residual:.6e}")
+            self.Logger.info("Solution is NOT reliable - use direct solver instead")
         else:
-            print("✗ FAILURE: Numerical breakdown")
+            self.Logger.info("✗ FAILURE: Numerical breakdown")
 
         return x
     
@@ -767,25 +616,25 @@ class UnstructuredPoissonSolver:
         M = None
         if use_ilu:
             try:
-                print("Building ILU preconditioner...")
+                self.Logger.info("Building ILU preconditioner...")
                 ilu = spilu(A.tocsc(), fill_factor=10, drop_tol=1e-4)
                 M = LinearOperator(A.shape, ilu.solve)
-                print("ILU: SUCCESS")
+                self.Logger.info("ILU: SUCCESS")
             except Exception as e:
-                print(f"ILU failed: {e}, solving without preconditioner")
+                self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
                 M = None
         
 
         callback = None
         if verbose:
-            callback = self.UnifiedVerboseCallback(A, b)
+            callback = self.UnifiedVerboseCallback(A, b, self.Logger)
 
         # Initial guess (not zeros for Neumann problems)
         x0 = np.random.randn(len(b))
         x0 = x0 - np.mean(x0)  # Remove constant component
 
 
-        print("Starting MinRES...")
+        self.Logger.info("Starting MinRES...")
         x, info = minres(A, b, 
                         x0=x0,
                         tol=tol, 
@@ -794,19 +643,19 @@ class UnstructuredPoissonSolver:
                         callback=callback)
 
         # Check result
-        print(f"\MinRES finished")
+        self.Logger.info(f"\MinRES finished")
         
         if info == 0:
-            print("✓ SUCCESS: Converged to tolerance")
+            self.Logger.info("✓ SUCCESS: Converged to tolerance")
             residual = np.linalg.norm(A @ x - b)
-            print(f"Final residual: {residual:.6e}")
+            self.Logger.info(f"Final residual: {residual:.6e}")
         elif info > 0:
-            print(f"✗ FAILURE: Did not converge in {info} iterations")
+            self.Logger.info(f"✗ FAILURE: Did not converge in {info} iterations")
             residual = np.linalg.norm(A @ x - b)
-            print(f"Final residual: {residual:.6e}")
-            print("Solution is NOT reliable - use direct solver instead")
+            self.Logger.info(f"Final residual: {residual:.6e}")
+            self.Logger.info("Solution is NOT reliable - use direct solver instead")
         else:
-            print("✗ FAILURE: Numerical breakdown")
+            self.Logger.info("✗ FAILURE: Numerical breakdown")
 
         return x
 
@@ -837,16 +686,16 @@ class UnstructuredPoissonSolver:
                             fill_factor=10,  # More fill
                             drop_tol=1e-4)
                 M = LinearOperator(A.shape, ilu.solve)
-                print("ILU preconditioner: Success")
+                self.Logger.info("ILU preconditioner: Success")
             except Exception as e:
-                print("ILU preconditioner failed:", e)
+                self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
                 M = None
 
         # Use callback_type='x' if available (SciPy >=1.8)
         callback = None
         callback_type = 'x'  # or 'legacy' for old behavior
         if verbose:
-            callback = self.UnifiedVerboseCallback(A, b)
+            callback = self.UnifiedVerboseCallback(A, b, self.Logger)
 
         # Provide non-constant initial guess
         N = A.shape[0]
@@ -854,15 +703,16 @@ class UnstructuredPoissonSolver:
         x0 = x0 - np.mean(x0)  # Remove constant component
 
         # Run GMRES
-        print("Starting FGMRES solve...")
+        self.Logger.info("Starting FGMRES solve...")
         x, info = fgmres(A, b, tol=tol, x0=x0, M=M, maxiter=maxiter, restart=restart, callback=callback)
         if verbose:
-            print(f"FGMRES completed after {callback.niter} iterations. info={info}")
             if info != 0:
-                print("Warning: FGMRES did not converge (info =", info, ")")
+                self.Logger.info("Warning: FGMRES did not converge (info = {info})")
+            else:
+                self.Logger.info(f"FGMRES completed after {callback.niter} iterations. info={info}")
         else:
             if info != 0:
-                print("Warning: FGMRES did not converge (info =", info, ")")
+                self.Logger.info("Warning: FGMRES did not converge (info = {info})")
 
         return x
     
@@ -893,16 +743,16 @@ class UnstructuredPoissonSolver:
                             fill_factor=10,  # More fill
                             drop_tol=1e-4)
                 M = LinearOperator(A.shape, ilu.solve)
-                print("ILU preconditioner: Success")
+                self.Logger.info("ILU preconditioner: Success")
             except Exception as e:
-                print("ILU preconditioner failed:", e)
+                self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
                 M = None
 
         # Use callback_type='x' if available (SciPy >=1.8)
         callback = None
         callback_type = 'x'  # or 'legacy' for old behavior
         if verbose:
-            callback = self.UnifiedVerboseCallback(A, b)
+            callback = self.UnifiedVerboseCallback(A, b, self.Logger)
 
         # Provide non-constant initial guess
         N = A.shape[0]
@@ -913,19 +763,21 @@ class UnstructuredPoissonSolver:
         print("Starting GMRES solve...")
         x, info = gmres(A, b, tol=tol, x0=x0, M=M, maxiter=maxiter, restart=restart, callback=callback, callback_type=callback_type)
         if verbose:
-            print(f"GMRES completed after {callback.niter} iterations. info={info}")
             if info != 0:
-                print("Warning: GMRES did not converge (info =", info, ")")
+                self.Logger.info("Warning: GMRES did not converge (info = {info})")
+            else:
+                self.Logger.info(f"GMRES completed after {callback.niter} iterations. info={info}")
         else:
             if info != 0:
-                print("Warning: GMRES did not converge (info =", info, ")")
+                self.Logger.info("Warning: GMRES did not converge (info = {info})")
         return x
 
     class UnifiedVerboseCallback:
-        def __init__(self, A, b):
+        def __init__(self, A, b, Logger):
             self.niter = 0
             self.A = A
             self.b = b
+            self.Logger = Logger
             
         def __call__(self, xk):
             self.niter += 1
@@ -936,4 +788,4 @@ class UnstructuredPoissonSolver:
             
             # Print every iteration (or every N iterations to reduce output)
             if self.niter % 10 == 0 or self.niter == 1:
-                print(f"Iter {self.niter}: residual = {res_norm:.6e}")
+                self.Logger.info(f"Iter {self.niter}: residual = {res_norm:.6e}")

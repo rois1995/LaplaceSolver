@@ -1,6 +1,9 @@
 from unstructured_poisson_solver import UnstructuredPoissonSolver
 from Parameters import options
 import numpy as np
+from Utils import setup_logging
+
+Logger = setup_logging(options["verbose"])
 
 # Initialize with CGNS file
 # solver = UnstructuredPoissonSolver("VeryCoarse_WithVoxel_OneBoundary.cgns")
@@ -11,7 +14,7 @@ import numpy as np
 # solver = UnstructuredPoissonSolver("Sphere.cgns")
 # solver = UnstructuredPoissonSolver("SmallSphere.cgns")
 # solver = UnstructuredPoissonSolver("IsolatedCube.cgns")
-solver = UnstructuredPoissonSolver(options)
+solver = UnstructuredPoissonSolver(options, Logger)
 
 
 
@@ -47,7 +50,13 @@ solver.construct_secondaryMeshStructures()
 
 
 # Or solve all three components
-solutions = solver.solve_components(components=[0, 1], solver=options["solverName"], useReordering=False, solverOptions=options["solverOptions"])
+components= [0, 1]
+if options["nDim"] == 3:
+    components += [3]
+if not (options["exactSolution"] == "None"):
+    components = [0]
+
+solutions = solver.solve_components(components=components, solver=options["solverName"], useReordering=False, solverOptions=options["solverOptions"])
 
 
 # Export to VTK for visualization in ParaView
