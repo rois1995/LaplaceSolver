@@ -80,5 +80,6 @@ options = {
             'solverName': solverName, 
             'solverOptions': solverOptions,
             'exactSolution': exactSolution,
-            'debug': debug
+            'debug': debug,
+            'exactSolutionFun': dirichlet_boundary_condition
           }

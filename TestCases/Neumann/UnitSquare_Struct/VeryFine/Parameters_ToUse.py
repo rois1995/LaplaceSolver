@@ -65,8 +65,7 @@ VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 
 solverName= "fgmres"
 solverOptions= {
-                'maxiter':20000,
-                'restart': 10
+                'maxiter':20000
                }
 
 options = {
@@ -80,5 +79,6 @@ options = {
             'solverName': solverName, 
             'solverOptions': solverOptions,
             'exactSolution': exactSolution,
-            'debug': debug
+            'debug': debug,
+            'exactSolutionFun': dirichlet_boundary_condition
           }

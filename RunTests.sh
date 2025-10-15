@@ -12,11 +12,12 @@ function createLink() {
 
 HOME="$(pwd)"
 
-# declare -a BigCaseNames=("Neumann" "Dirichlet")
-declare -a BigCaseNames=("Dirichlet")
-declare -a TestCaseNames=("UnitSquare_Struct")
-declare -a SubTestCaseNames=("Coarse" "Medium" "Fine" "VeryFine")
-declare -a HowManySubCases=("4")
+declare -a BigCaseNames=("Neumann" "Dirichlet")
+# declare -a BigCaseNames=("Dirichlet")
+# declare -a TestCaseNames=("UnitSquare_Struct" "UnitCube_Struct")
+declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_UnstructAligned" "UnitSquare_Unstruct" "UnitSquare_UnstructMixedAligned" "UnitCube_Struct")
+declare -a SubTestCaseNames=("Coarse" "Medium" "Fine" "VeryFine" "Coarse" "Medium" "Fine" "VeryFine" "Coarse" "Medium" "Fine" "VeryFine" "Coarse" "Medium" "Fine" "VeryFine" "Coarse" "Medium" "Fine" "VeryFine")
+declare -a HowManySubCases=("4" "4" "4" "4" "4")
 CleanFolder=0
 Verbose=Silent
 
@@ -38,6 +39,8 @@ do
       SubCase=""
       cd ${HOME}/TestCases/${BigCaseName}/${TestCase}
       echo "Running test case ${BigCaseName}/${TestCase}/${SubCase}"
+
+      mkdir -p Solutions
 
       if [ ${HowManySubCases[$iTestCase]} -eq "1" ]
       then
@@ -70,6 +73,8 @@ do
       if grep -q "Solution exported to" "output.log"
       then
         echo "PASSED!"
+
+        createLink ../${SubCase}/$(ls *.vtu) ../Solutions/flow_$(printf '%05d' $iSubTestCase).vtu
 
         mv Parameters_ToUse.py ../dummy.py
 
