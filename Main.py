@@ -50,13 +50,20 @@ solver.construct_secondaryMeshStructures()
 
 
 # Or solve all three components
-components= [0, 1]
+forceComponents= [0, 1]
 if options["nDim"] == 3:
-    components += [3]
+    forceComponents += [2]
 if not (options["exactSolution"] == "None"):
-    components = [0]
+    forceComponents = [0]
 
-solutions = solver.solve_components(components=components, solver=options["solverName"], useReordering=False, solverOptions=options["solverOptions"])
+
+momentComponents= [2]
+if options["nDim"] == 3:
+    momentComponents = [0, 1, 2]
+if not (options["exactSolution"] == "None"):
+    momentComponents = []
+
+solutions = solver.solve_components(forceComponents=forceComponents, momentComponents=momentComponents, solver=options["solverName"], useReordering=False, solverOptions=options["solverOptions"])
 
 
 # Export to VTK for visualization in ParaView

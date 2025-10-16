@@ -54,6 +54,7 @@ class UnstructuredPoissonSolver:
         self.debug = options["debug"]
         self.Logger = Logger
         self.exactSolutionFun = options["exactSolutionFun"]
+        self.momentOrigin = np.array(options["momentOrigin"])
 
     def read_cgns_unstructured(self, options):
         """
@@ -209,7 +210,7 @@ class UnstructuredPoissonSolver:
 
 
 
-    def apply_CV_BCs(self, A, b, component_idx=1):
+    def apply_CV_BCs(self, A, b, component_idx=1, ForceOrMoment="Force"):
         """
         Build finite volume system for Poisson equation using node-based approach
 
@@ -252,10 +253,16 @@ class UnstructuredPoissonSolver:
                     if bc_data['Value'] == 0: # Farfield
                         bc_val = 0
                     elif bc_data['Value'] == 'Normal':
-                        bc_val = bNormal[component_idx]
+                        if ForceOrMoment == "Force":
+                            bc_val = bNormal[component_idx]
+                        elif ForceOrMoment == "Moment":
+                            bc_val = np.cross(self.Mesh.Nodes[iBoundNode, :]-self.momentOrigin, bNormal)[component_idx]
+                        else:
+                            self.Logger.error(f"ERROR! ForceOrMoment {ForceOrMoment} not recognized!")
+                            raise
                     else:
                         self.Logger.error("ERROR! Unrecognized boundary condition value!")
-                        exit(1)          
+                        raise         
 
                 b[iBoundNode] = -bc_val*BoundaryCVArea/ControlVolumesPerNode[iBoundNode]
 
@@ -360,7 +367,7 @@ class UnstructuredPoissonSolver:
 
         return phi
 
-    def solve_components(self, components=[0], solver='spsolve', useReordering=False, solverOptions={}):
+    def solve_components(self, forceComponents=[0], momentComponents=[], solver='spsolve', useReordering=False, solverOptions={}):
         """
         Solve for all three components
 
@@ -390,11 +397,11 @@ class UnstructuredPoissonSolver:
         A, b = self.build_CV_fv_system()
             # exit(1)
 
-        for component_idx in components:
+        for component_idx in forceComponents:
             self.Logger.info(f"\n{'='*60}")
-            self.Logger.info(f"Solving component {component_idx}")
+            self.Logger.info(f"Solving for force component {component_idx}")
             self.Logger.info('='*60)
-            A, b = self.apply_CV_BCs(A, b, component_idx=component_idx)
+            A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment="Force")
             phi = self.solve_poisson(A, b, solver, useReordering, solverOptions, component_idx=component_idx)
             if self.allNeumann:
                 phi = phi[:-1]
@@ -412,6 +419,30 @@ class UnstructuredPoissonSolver:
             
             solutions[f'phi_{component_idx}'] = phi
             solutions[f'residual_phi_{component_idx}'] = residual
+
+        if len(momentComponents) > 0:
+            for component_idx in momentComponents:
+                self.Logger.info(f"\n{'='*60}")
+                self.Logger.info(f"Solving for moment component {component_idx}")
+                self.Logger.info('='*60)
+                A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment="Moment")
+                phi = self.solve_poisson(A, b, solver, useReordering, solverOptions, component_idx=component_idx)
+                if self.allNeumann:
+                    phi = phi[:-1]
+                    residual = self.verify_solution(A[:-1, :-1], phi, b[:-1])
+                else:
+                    residual = self.verify_solution(A, phi, b)
+                
+                if not self.exactSolution == "None":
+                    error = self.computeErrorFromExactSolution(phi)
+                    self.Logger.info(f"Error from exact solution = {error}")
+                    fid = open('Conv.log', mode='w')
+                    print(f"{self.Mesh.n_nodes} {error}", file=fid)
+                    fid.close()
+
+                
+                solutions[f'phi_m_{component_idx}'] = phi
+                solutions[f'residual_phi_m_{component_idx}'] = residual
 
         return solutions
     

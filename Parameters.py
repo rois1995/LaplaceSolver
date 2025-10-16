@@ -4,14 +4,16 @@ verbose=True
 
 # GridName= "IsolatedCube_Unstr.cgns"
 GridName= "Mesh.cgns"
-nDim= 3
-BlockName= "blk-1"
-# BlockName= "dom-1"
+nDim= 2
+# BlockName= "blk-1"
+BlockName= "dom-1"
+
+momentOrigin=[0.5, 0.5, 0.0]
 
 debug=1
 
-exactSolution= "Cosine_3D"
-caseName = GridName.split(".")[0]+"_"+exactSolution + "_CVSolution_Dirichlet"
+exactSolution= "None"
+caseName = GridName.split(".")[0]+"_"+exactSolution + "_CVSolution"
 
 def vol_condition(x, y, z, typeOfExactSolution="None"):
     if typeOfExactSolution == "Cosine_3D":
@@ -63,12 +65,12 @@ def neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
 
 # BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
 # BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
-# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 0, 'typeOfExactSolution': exactSolution },
-#                       'Wall': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 'Normal', 'typeOfExactSolution': exactSolution }}
+BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 0, 'typeOfExactSolution': exactSolution },
+                      'Wall': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': 'Normal', 'typeOfExactSolution': exactSolution }}
 
 # BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
 # BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
-BoundaryConditions= { 'Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
 # BoundaryConditions= { 'Farfield': {'Elem_type': 'tri', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
 # BoundaryConditions= { 'tri_Farfield': {'Elem_type': 'tri', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution },
 #                       'quad_Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
@@ -131,5 +133,6 @@ options = {
             'solverOptions': solverOptions,
             'exactSolution': exactSolution,
             'debug': debug,
-            'exactSolutionFun': dirichlet_boundary_condition
+            'exactSolutionFun': dirichlet_boundary_condition,
+            'momentOrigin': momentOrigin
           }
