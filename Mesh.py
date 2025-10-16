@@ -54,8 +54,9 @@ class MeshClass:
 
     # Edges shared by the same Node per element for each type
     EDGESOFPOINTS_PER_ELEMENT = {
-        5: [[0, 2], [0, 1], [1, 2]],    # TRI_3
-        7: [[0, 3], [0, 1], [1, 2], [2, 3]],    # QUAD_4
+        5: [[0, 5], [1, 3], [2, 4]],    # TRI_3
+        7: [[0, 7], [1, 4], [2, 5], [3, 6]],    # QUAD_4
+        # 7: [[0, 3], [0, 1], [1, 2], [2, 3]],    # QUAD_4
 
         10: [[0, 2, 3], [0, 1, 4], [1, 2, 5], [3, 4, 5]],   # TETRA_4
 
@@ -64,28 +65,63 @@ class MeshClass:
         14: [[0, 2, 6], [0, 1, 7], [1, 2, 8], 
              [3, 5, 6], [3, 4, 7], [4, 5, 8]],   # PENTA_6
 
-        17: [[0, 4, 11], [0, 1, 8], [1, 2, 9], [2, 3, 10], 
-             [5, 8, 11], [5, 6, 8], [6, 7, 9], [7, 8, 10]],   # HEXA_8  As per CGNS standard
+        17: [[0, 11, 15], [1, 8, 12], [2, 9, 13], [3, 10, 14], 
+             [4, 19, 23], [5, 16, 20], [6, 17, 21], [7, 18, 22]],   # HEXA_8  As per CGNS standard
+    }
+
+    # Edges shared by the same Node per element for each type
+    SIGN_EDGESOFELEMENT_PER_ELEMENT = {
+        5: [1, 1, 1, -1, -1, -1],    # TRI_3
+        7: [1, 1, 1, 1, -1, -1, -1, -1],    # QUAD_4
+
+        10: [],   # TETRA_4
+
+        12: [],   # PYRA_5
+
+        14: [],   # PENTA_6
+
+        17: [],   # HEXA_8  As per CGNS standard
     }
 
     # Edges as NodeI-NodeJ in local indices per element for each type
     EDGES_PER_ELEMENT = {
-        5: [[0, 1], [1, 2], [2, 0]],    # TRI_3
-        7: [[0, 1], [1, 2], [2, 3], [3, 0]],    # QUAD_4
+        5: [[0, 1], [1, 2], [2, 0],
+            [1, 0], [2, 1], [0, 2]],    # TRI_3
+        # 7: [[0, 1], [1, 2], [2, 3], [3, 0]],    # QUAD_4
+        7: [[0, 1], [1, 2], [2, 3], [3, 0],
+            [1, 0], [2, 1], [3, 2], [0, 3]],    # QUAD_4
 
         10: [[0, 1], [1, 2], [2, 0],
-             [0, 3], [1, 3], [2, 3]],   # TETRA_4
+             [0, 3], [1, 3], [2, 3],
+             
+             [1, 0], [2, 1], [0, 2],
+             [3, 0], [3, 1], [3, 2]
+             ],   # TETRA_4
 
         12: [[0, 1], [1, 2], [2, 3], [3, 0],
-             [0, 4], [1, 4], [2, 4], [3, 4]],   # PYRA_5
+             [0, 4], [1, 4], [2, 4], [3, 4],
+             
+             [1, 0], [2, 1], [3, 2], [0, 3],
+             [4, 0], [4, 1], [4, 2], [4, 3]
+             ],   # PYRA_5
 
         14: [[0, 1], [1, 2], [2, 0],
              [3, 4], [4, 5], [5, 3],
-             [0, 3], [1, 4], [2, 5]],   # PENTA_6
+             [0, 3], [1, 4], [2, 5],
+             
+             [1, 0], [2, 1], [0, 2],
+             [4, 3], [5, 4], [3, 5],
+             [3, 0], [4, 1], [5, 2]
+             ],   # PENTA_6
 
         17: [[0, 1], [1, 2], [2, 3], [3, 0], 
              [4, 5], [5, 6], [6, 7], [7, 4], 
-             [1, 5], [2, 6], [3, 7], [0, 4]],   # HEXA_8
+             [1, 5], [2, 6], [3, 7], [0, 4],
+             
+             [1, 0], [2, 1], [3, 2], [0, 3], 
+             [5, 4], [6, 5], [7, 6], [4, 7], 
+             [5, 1], [6, 2], [7, 3], [4, 0]
+             ],   # HEXA_8
     }
 
 
@@ -95,13 +131,13 @@ class MeshClass:
         5: [],    # TRI_3
         7: [],    # QUAD_4
 
-        10: [[0, 1, 2], [0, 1, 3], [2, 0, 3], [1, 2, 3]],   # TETRA_4
+        10: [[0, 2, 1], [0, 1, 3], [2, 0, 3], [1, 2, 3]],   # TETRA_4
 
-        12: [[0, 1, 2, 3], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]],   # PYRA_5
+        12: [[0, 3, 2, 1], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]],   # PYRA_5
 
         14: [[0, 1, 4, 3], [1, 2, 5, 4], [2, 0, 3, 5], [0, 2, 1], [4, 5, 3]],   # PENTA_6
 
-        17: [[0, 1, 2, 3], [0, 1, 5, 4], [0, 4, 7, 3], [1, 2, 6, 5],
+        17: [[0, 3, 2, 1], [0, 1, 5, 4], [0, 4, 7, 3], [1, 2, 6, 5],
              [4, 5, 6, 7], [2, 3, 7, 6]],   # HEXA_8
     }
 
@@ -111,14 +147,33 @@ class MeshClass:
         5: [],    # TRI_3
         7: [],    # QUAD_4
         10: [[0, 1], [0, 3], [0, 2],
+             [1, 2], [1, 3], [2, 3],
+             
+             [0, 1], [0, 3], [0, 2],
              [1, 2], [1, 3], [2, 3]],   # TETRA_4
-        12: [[], [], [], [],
-             [], [], [], []],   # PYRA_5
+
+        12: [[0, 1], [0, 2], [0, 3], [0, 4],
+             [1, 4], [1, 2], [2, 3], [3, 4],
+             
+             [0, 1], [0, 2], [0, 3], [0, 4],
+             [1, 4], [1, 2], [2, 3], [3, 4]
+             ],   # PYRA_5
+
         14: [[0, 3], [1, 3], [2, 3],
              [0, 4], [1, 4], [2, 4],
-             [0, 2], [0, 1], [1, 2]],   # PENTA_6
+             [0, 2], [0, 1], [1, 2],
+             
+             [0, 3], [1, 3], [2, 3],
+             [0, 4], [1, 4], [2, 4],
+             [0, 2], [0, 1], [1, 2]
+             ],   # PENTA_6
+
         17: [[0, 1], [0, 3], [0, 5], [0, 2], 
-             [4, 1], [4, 3], [4, 5], [4, 4], 
+             [4, 1], [4, 3], [4, 5], [2, 4], 
+             [1, 3], [3, 5], [2, 5], [1, 2],
+             
+             [0, 1], [0, 3], [0, 5], [0, 2], 
+             [4, 1], [4, 3], [4, 5], [2, 4], 
              [1, 3], [3, 5], [2, 5], [1, 2]],   # HEXA_8
     }
 
@@ -678,8 +733,6 @@ class MeshClass:
             edgeCentroids = np.mean(ElementNodes[:, edges_per_elem, :], axis=2)
 
             self.Elements[section_name]["edgeCentroids"] = edgeCentroids
-
-            facesOfEdges = self.FACESOFEDGES_PER_ELEMENT.get(elem_type, 0)
             
             SectionalAreaOfEdges = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem)), dtype=float)
             LineNormalsOfEdgeFaces = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem), 3), dtype=float)
@@ -687,6 +740,8 @@ class MeshClass:
             lines = np.zeros((len(elem_data["connectivity"][:, 0]), 2, 3), dtype=float)
 
             lines[:, 1, :] = elem_data["CellCenters"]
+
+            signOf_EdgesOfElements = self.SIGN_EDGESOFELEMENT_PER_ELEMENT.get(elem_type, 0)
 
             # Now I compute the areas of each edge midpoint
             # Cycle on each edge
@@ -696,16 +751,17 @@ class MeshClass:
 
                 LineNormalsOfEdgeFaces[:, iEdge, :] = self._compute_normal_line(lines)
                 SectionalAreaOfEdges[:, iEdge] = self._compute_line_length(lines, toPrint=False)
+
+                signOfEdge = signOf_EdgesOfElements[iEdge]
                 
                 for iElem in range(len(connectivity[:, 0])):
                     edgeName = "-".join(map(str, connectivity[iElem, edge]))
                     ControlFaceDictPerEdge[edgeName] += SectionalAreaOfEdges[iElem, iEdge]
-                    ControlFaceNormalDictPerEdge[edgeName] += LineNormalsOfEdgeFaces[iElem, iEdge, :]
+                    ControlFaceNormalDictPerEdge[edgeName] += LineNormalsOfEdgeFaces[iElem, iEdge, :]*signOfEdge*SectionalAreaOfEdges[iElem, iEdge]
 
-            
+            # exit(1)
             self.Elements[section_name]["SectionalAreaOfEdges"] = SectionalAreaOfEdges
             self.Elements[section_name]["ControlFaceNormalDictPerEdge"] = ControlFaceNormalDictPerEdge
-
 
             edgesOfPoints = self.EDGESOFPOINTS_PER_ELEMENT.get(elem_type, 0)
             trias = np.zeros((len(elem_data["connectivity"][:, 0]), 3, 3), dtype=float)
@@ -732,36 +788,15 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Collecting the edge face area from every element")
 
-        AlreadyProcessed = {}
         for key in ControlFaceDictPerEdge.keys():
-            reverseKey = "-".join(list(reversed(key.split("-"))))
             
-            # It should not matter if I do it twice , but I exclude already processed edges just to be sure
-            if not key in AlreadyProcessed.keys():
+            ControlFaceNormalDictPerEdge[key] = ControlFaceNormalDictPerEdge[key] / ControlFaceDictPerEdge[key]
 
-                # First extract the two normals
-                normal_key = ControlFaceNormalDictPerEdge[key]
-                normal_reversekey = ControlFaceNormalDictPerEdge[reverseKey]
-
-                # Then reverse the one from reverse key
-                normal_reversekey = -normal_reversekey
-
-                # Then perform weighted average
-                face_key = ControlFaceDictPerEdge[key]
-                face_reversekey = ControlFaceDictPerEdge[reverseKey]
-                newNormal = (normal_key*face_key + normal_reversekey*face_reversekey) / (face_key+face_reversekey)
-
-                # Now update the normal
-                ControlFaceNormalDictPerEdge[key] = newNormal
-                ControlFaceNormalDictPerEdge[reverseKey] = -newNormal
-
-                # Now compute the areas
-                dummy = (face_key + face_reversekey)/2
-                ControlFaceDictPerEdge[key] = dummy
-                ControlFaceDictPerEdge[reverseKey] = dummy
-                
-                AlreadyProcessed[key] = True
-                AlreadyProcessed[reverseKey] = True
+            # Points = key.split("-")
+            # # print(f"For edge {key} from Coords {self.Nodes[int(Points[0]), :]} to Coords {self.Nodes[int(Points[1]), :]} has normal {ControlFaceNormalDictPerEdge[key]}")
+            # print(f"For edge {key} from Coords {self.Nodes[int(Points[0]), :]} to Coords {self.Nodes[int(Points[1]), :]} has area {ControlFaceDictPerEdge[key]}")
+            # if self.isNodeOnBoundary[int(Points[0])] and self.isNodeOnBoundary[int(Points[1])]:
+            #     print(f"Keep in mind that both nodes are on boundary")
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
         
@@ -782,11 +817,13 @@ class MeshClass:
         # Construct a dictionary of edges for each point that will have the area associated to it
         ControlVolumesPerNode = np.zeros((self.n_nodes, ), dtype=float)
         ControlFaceDictPerEdge = {}
+        ControlFaceNormalDictPerEdge = {}
         for iNode in range(self.n_nodes):
 
             neighbors = list(self.NodesConnectedToNode[iNode])
             for neigh in neighbors:
                 ControlFaceDictPerEdge[str(iNode)+"-"+str(neigh)] = 0.0
+                ControlFaceNormalDictPerEdge[str(iNode)+"-"+str(neigh)] = np.array([0.0, 0.0, 0.0])
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
 
@@ -817,8 +854,9 @@ class MeshClass:
             self.Elements[section_name]["FaceCentroids"] = faceCentroids
 
             facesOfEdges = self.FACESOFEDGES_PER_ELEMENT.get(elem_type, 0)
-            
+
             SectionalAreaOfEdges = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem)), dtype=float)
+            NormalsOfEdgeFaces = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem), 3), dtype=float)
 
             trias = np.zeros((len(elem_data["connectivity"][:, 0]), 3, 3), dtype=float)
 
@@ -828,19 +866,45 @@ class MeshClass:
             # Cycle on each edge
             for iEdge, edge in enumerate(edges_per_elem):
 
-                trias[:, 1, :] = edgeCentroids[:, iEdge]
+                trias[:, 2, :] = edgeCentroids[:, iEdge]
+
+                edgeName = ''.join(map(str, edge))
+
+                # for iElem in range(len(connectivity[:, 0])):
+                #     if connectivity[iElem, edge[0]] == 999 and connectivity[iElem, edge[1]] == 899:
+                #         print(f" edge name {edgeName} from Coords {self.Nodes[connectivity[iElem, edge[0]], :]} to Coords {self.Nodes[connectivity[iElem, edge[1]], :]}")
 
                 for face in facesOfEdges[iEdge]:
                                             
                     # Compose tria and compute area contribution
-                    trias[:, 2, :] = faceCentroids[:, face, :]
+                    trias[:, 1, :] = faceCentroids[:, face, :]
                     faceAreaContrib = self._compute_tria_area(trias, toPrint=False)
+
+                    faceName = ''.join(map(str, faces_per_elem[face] + [faces_per_elem[face][0]]))
+                    signOfFace = -1
+                    if edgeName in faceName:
+                        signOfFace = 1
+                    
+                    normal = self._compute_normal_tria(trias)
+                    NormalsOfEdgeFaces[:, iEdge, :] += normal * signOfFace * np.repeat(faceAreaContrib[..., np.newaxis], 3, axis=1)
                     SectionalAreaOfEdges[:, iEdge] += faceAreaContrib
+
+                    # for iElem in range(len(connectivity[:, 0])):
+                    #     if connectivity[iElem, edge[0]] == 999 and connectivity[iElem, edge[1]] == 899:
+                    #         print(f"normal = {normal[iElem]} , weighted normal {normal[iElem] * signOfFace * faceAreaContrib[iElem]}")
+                    #         print(f"sign of face {faceName} is {signOfFace}")
+                    #         print(f"sign of edge {signOfEdge}")
+
+                # for iElem in range(len(connectivity[:, 0])):
+                #     if connectivity[iElem, edge[0]] == 999 and connectivity[iElem, edge[1]] == 988899:
+                #         print(f"final normal {NormalsOfEdgeFaces[iElem, iEdge, :]}")
                 
                 for iElem in range(len(connectivity[:, 0])):
                     edgeName = "-".join(map(str, connectivity[iElem, edge]))
                     ControlFaceDictPerEdge[edgeName] += SectionalAreaOfEdges[iElem, iEdge]
+                    ControlFaceNormalDictPerEdge[edgeName] += NormalsOfEdgeFaces[iElem, iEdge, :]
 
+            
             
             self.Elements[section_name]["SectionalAreaOfEdges"] = SectionalAreaOfEdges
 
@@ -869,27 +933,38 @@ class MeshClass:
 
                         # I can already add it to the global index
                         np.add.at(ControlVolumesPerNode, pointsGlobalIndices, controlVolumeContrib)
+        
+        # exit(1)
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
 
         start = time.time()
         self.Logger.info("Collecting the edge face area from every element")
 
-        AlreadyProcessed = {}
-        for key in ControlFaceDictPerEdge.keys():
-            reverseKey = "-".join(list(reversed(key.split("-"))))
+        # AlreadyProcessed = {}
+        # for key in ControlFaceDictPerEdge.keys():
+        #     reverseKey = "-".join(list(reversed(key.split("-"))))
             
-            # It should not matter if I do it twice , but I exclude already processed edges just to be sure
-            if not key in AlreadyProcessed.keys():
-                dummy = (ControlFaceDictPerEdge[key] + ControlFaceDictPerEdge[reverseKey])
-                ControlFaceDictPerEdge[key] = dummy
-                ControlFaceDictPerEdge[reverseKey] = dummy
-                AlreadyProcessed[key] = True
-                AlreadyProcessed[reverseKey] = True
+        #     # It should not matter if I do it twice , but I exclude already processed edges just to be sure
+        #     if not key in AlreadyProcessed.keys():
+        #         dummy = (ControlFaceDictPerEdge[key] + ControlFaceDictPerEdge[reverseKey])
+        #         ControlFaceDictPerEdge[key] = dummy
+        #         ControlFaceDictPerEdge[reverseKey] = dummy
+        #         AlreadyProcessed[key] = True
+        #         AlreadyProcessed[reverseKey] = True
+
+        for key in ControlFaceDictPerEdge.keys():
+            ControlFaceNormalDictPerEdge[key] = ControlFaceNormalDictPerEdge[key] / ControlFaceDictPerEdge[key]
+            
+            # Points = key.split("-")
+            # print(f"For edge {key} from Coords {self.Nodes[int(Points[0]), :]} to Coords {self.Nodes[int(Points[1]), :]} has normal {ControlFaceNormalDictPerEdge[key]}")
+            # print(f"For edge {key} from Coords {self.Nodes[int(Points[0]), :]} to Coords {self.Nodes[int(Points[1]), :]} has area {ControlFaceDictPerEdge[key]}")
+            
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
         
         self.ControlFaceDictPerEdge = ControlFaceDictPerEdge
+        self.ControlFaceNormalDictPerEdge = ControlFaceNormalDictPerEdge
         self.ControlVolumesPerNode = ControlVolumesPerNode
 
         

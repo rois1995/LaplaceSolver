@@ -163,8 +163,8 @@ class UnstructuredPoissonSolver:
 
         node_neighbors = self.Mesh.NodesConnectedToNode
         ControlFaceDictPerEdge = self.Mesh.ControlFaceDictPerEdge
-        if self.nDim == 2:
-            ControlFaceNormalDictPerEdge = self.Mesh.ControlFaceNormalDictPerEdge
+        # if self.nDim == 2:
+        ControlFaceNormalDictPerEdge = self.Mesh.ControlFaceNormalDictPerEdge
         ControlVolumesPerNode = self.Mesh.ControlVolumesPerNode
         # Build Laplacian matrix
         for i in range(N):
@@ -188,13 +188,12 @@ class UnstructuredPoissonSolver:
                 dist = np.linalg.norm(distVec)
                 controlAreaIJ = ControlFaceDictPerEdge[str(i)+"-"+str(j)]
                 proj=1
-                if self.nDim == 2:
-                    faceNormalIJ = ControlFaceNormalDictPerEdge[str(i)+"-"+str(j)]
-                    proj = np.sum(distVec*faceNormalIJ)/dist
-                if dist > 1e-10:
-                    coeff = controlAreaIJ * proj/ (dist*controlVolume)
-                    A[i, j] = coeff
-                    diag_val -= coeff
+                # if self.nDim == 2:
+                faceNormalIJ = ControlFaceNormalDictPerEdge[str(i)+"-"+str(j)]
+                proj = np.sum(distVec*faceNormalIJ)/dist
+                coeff = controlAreaIJ * proj/ (dist*controlVolume)
+                A[i, j] = coeff
+                diag_val -= coeff
 
             A[i, i] = diag_val
             b[i] = self.volume_condition["Value"](self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
@@ -271,7 +270,7 @@ class UnstructuredPoissonSolver:
                 b[iBoundNode] = bc_val
                 
             actualPoint+= 1
-                
+
         return A, b
 
 
@@ -585,14 +584,7 @@ class UnstructuredPoissonSolver:
         # Try with ILU preconditioner
         M = None
         if use_ilu:
-            try:
-                self.Logger.info("Building ILU preconditioner...")
-                ilu = spilu(A.tocsc(), fill_factor=10, drop_tol=1e-4)
-                M = LinearOperator(A.shape, ilu.solve)
-                self.Logger.info("ILU: SUCCESS")
-            except Exception as e:
-                self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
-                M = None
+            M = self.build_ILU(A, solverOptions)
         
 
         callback = None
@@ -628,7 +620,6 @@ class UnstructuredPoissonSolver:
             self.Logger.info("✗ FAILURE: Numerical breakdown")
 
         return x
-    
 
     def minres_solver(self, A, b, solverOptions):
 
@@ -648,14 +639,7 @@ class UnstructuredPoissonSolver:
         # Try with ILU preconditioner
         M = None
         if use_ilu:
-            try:
-                self.Logger.info("Building ILU preconditioner...")
-                ilu = spilu(A.tocsc(), fill_factor=10, drop_tol=1e-4)
-                M = LinearOperator(A.shape, ilu.solve)
-                self.Logger.info("ILU: SUCCESS")
-            except Exception as e:
-                self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
-                M = None
+            M = self.build_ILU(A, solverOptions)
         
 
         callback = None
@@ -713,16 +697,7 @@ class UnstructuredPoissonSolver:
         # ILU preconditioner (fast for well-formed Laplace matrices)
         M = None
         if use_ilu:
-            try:
-                # spilu requires CSC/CSR format
-                ilu = spilu(A.tocsc(), 
-                            fill_factor=10,  # More fill
-                            drop_tol=1e-4)
-                M = LinearOperator(A.shape, ilu.solve)
-                self.Logger.info("ILU preconditioner: Success")
-            except Exception as e:
-                self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
-                M = None
+            M = self.build_ILU(A, solverOptions)
 
         # Use callback_type='x' if available (SciPy >=1.8)
         callback = None
@@ -770,16 +745,7 @@ class UnstructuredPoissonSolver:
         # ILU preconditioner (fast for well-formed Laplace matrices)
         M = None
         if use_ilu:
-            try:
-                # spilu requires CSC/CSR format
-                ilu = spilu(A.tocsc(), 
-                            fill_factor=10,  # More fill
-                            drop_tol=1e-4)
-                M = LinearOperator(A.shape, ilu.solve)
-                self.Logger.info("ILU preconditioner: Success")
-            except Exception as e:
-                self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
-                M = None
+            M = self.build_ILU(A, solverOptions)
 
         # Use callback_type='x' if available (SciPy >=1.8)
         callback = None
@@ -822,3 +788,24 @@ class UnstructuredPoissonSolver:
             # Print every iteration (or every N iterations to reduce output)
             if self.niter % 10 == 0 or self.niter == 1:
                 self.Logger.info(f"Iter {self.niter}: residual = {res_norm:.6e}")
+
+    def build_ILU(self, A, solverOptions):
+
+        fill_factor=10
+        if 'fill_factor' in solverOptions.keys():
+            fill_factor = solverOptions['fill_factor']
+        drop_tol=1e-4
+        if 'drop_tol' in solverOptions.keys():
+            drop_tol = solverOptions['drop_tol']
+
+        M = None
+        try:
+            self.Logger.info("Building ILU preconditioner...")
+            ilu = spilu(A.tocsc(), fill_factor=fill_factor, drop_tol=drop_tol)
+            M = LinearOperator(A.shape, ilu.solve)
+            self.Logger.info("ILU: SUCCESS")
+        except Exception as e:
+            self.Logger.error(f"ILU failed: {e}, solving without preconditioner")
+            M = None
+        
+        return M

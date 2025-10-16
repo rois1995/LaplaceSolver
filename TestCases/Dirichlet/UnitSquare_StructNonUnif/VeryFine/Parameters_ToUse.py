@@ -3,12 +3,12 @@ import numpy as np
 verbose=False
 
 GridName= "Mesh.cgns"
-nDim= 3
-BlockName= "blk-1"
+nDim= 2
+BlockName= "dom-1"
 
 debug=1
 
-exactSolution= "Cosine_3D"
+exactSolution= "Cosine_2D"
 caseName = exactSolution + "_CVSolution_Dirichlet"
 
 def vol_condition(x, y, z, typeOfExactSolution="None"):
@@ -17,7 +17,7 @@ def vol_condition(x, y, z, typeOfExactSolution="None"):
     elif typeOfExactSolution == "Parabolic_3D" or typeOfExactSolution == "Parabolic_2D":
         return 1
     elif typeOfExactSolution == "Cosine_2D":
-        return -4 * (np.pi**2) * np.cos(2*np.pi*x) * np.cos(2*np.pi*y)
+        return -8 * (np.pi**2) * np.cos(2*np.pi*x) * np.cos(2*np.pi*y)
     elif typeOfExactSolution == "None":
         return 0
     else:
@@ -60,11 +60,11 @@ def neumann_boundary_condition(x, y, z, typeOfExactSolution="None"):
 
 
 
-BoundaryConditions= { 'Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
 
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 
-solverName= "fgmres"
+solverName= "gmres"
 solverOptions= {
                 'maxiter':20000
                }

@@ -15,7 +15,9 @@ HOME="$(pwd)"
 declare -a BigCaseNames=("Neumann" "Dirichlet")
 # declare -a BigCaseNames=("Dirichlet")
 # declare -a TestCaseNames=("UnitSquare_Struct" "UnitCube_Struct")
-declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_UnstructAligned" "UnitSquare_Unstruct" "UnitSquare_UnstructMixedAligned" "UnitSquare_UnstructMixed" "UnitCube_Struct" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms")
+# declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_UnstructAligned" "UnitSquare_Unstruct" "UnitSquare_UnstructMixedAligned" "UnitSquare_UnstructMixed" "UnitCube_Struct" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms")
+# declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_UnstructAligned" "UnitSquare_Unstruct" "UnitSquare_UnstructMixedAligned" "UnitSquare_UnstructMixed")
+declare -a TestCaseNames=( "UnitCube_WithTetsAndPyras")
 # declare -a TestCaseNames=("UnitCube_Struct" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms")
 CleanFolder=0
 Verbose=Silent
@@ -57,6 +59,8 @@ do
         sed -i 's/^\s*verbose=.*$/verbose= True/' Parameters.py
       fi
 
+      sed -i 's/^\s*solverName=.*$/solverName= "bicgstab"/' Parameters.py
+
       source /home/rausa/PythonVirtualEnvironments/Python3.8.10/bin/activate
 
       python3 Main.py
@@ -85,9 +89,10 @@ do
         break
       fi
 
+      iMesh=$((iMesh+1))
+
     done
 
-    iMesh=$((iMesh+1))
 
     if [ $Verbose != "Silent" ]
     then

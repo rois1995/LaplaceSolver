@@ -17,7 +17,7 @@ def vol_condition(x, y, z, typeOfExactSolution="None"):
     elif typeOfExactSolution == "Parabolic_3D" or typeOfExactSolution == "Parabolic_2D":
         return 1
     elif typeOfExactSolution == "Cosine_2D":
-        return -4 * (np.pi**2) * np.cos(2*np.pi*x) * np.cos(2*np.pi*y)
+        return -8 * (np.pi**2) * np.cos(2*np.pi*x) * np.cos(2*np.pi*y)
     elif typeOfExactSolution == "None":
         return 0
     else:
@@ -64,7 +64,7 @@ BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', '
 
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 
-solverName= "fgmres"
+solverName= "gmres"
 solverOptions= {
                 'maxiter':20000
                }
