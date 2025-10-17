@@ -702,14 +702,14 @@ class MeshClass:
 
         # Construct a dictionary of edges for each point that will have the area associated to it
         ControlVolumesPerNode = np.zeros((self.n_nodes, ), dtype=float)
-        ControlFaceDictPerEdge = {}
-        ControlFaceNormalDictPerEdge = {}
+        ControlFaceDictPerEdge = [{} for i in range(self.n_nodes)]
+        ControlFaceNormalDictPerEdge = [{} for i in range(self.n_nodes)]
         for iNode in range(self.n_nodes):
 
             neighbors = list(self.NodesConnectedToNode[iNode])
             for neigh in neighbors:
-                ControlFaceDictPerEdge[str(iNode)+"-"+str(neigh)] = 0.0
-                ControlFaceNormalDictPerEdge[str(iNode)+"-"+str(neigh)] = np.array([0.0, 0.0, 0.0])
+                ControlFaceDictPerEdge[iNode][str(neigh)] = 0.0
+                ControlFaceNormalDictPerEdge[iNode][str(neigh)] = np.array([0.0, 0.0, 0.0])
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
 
@@ -717,8 +717,6 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Computing the edges (and faces in 3D) centroids...")
         self.Logger.info("Computing Control Volume and face area between node i and j...")
-        self.Logger.info("REMARK: the face area is the same but the control volume not necessarily!")
-
 
         # Cycle on each element and pre-compute edges mid-points and faces centers if 3D
         for section_name, elem_data in self.Elements.items():
@@ -755,13 +753,10 @@ class MeshClass:
                 signOfEdge = signOf_EdgesOfElements[iEdge]
                 
                 for iElem in range(len(connectivity[:, 0])):
-                    edgeName = "-".join(map(str, connectivity[iElem, edge]))
-                    ControlFaceDictPerEdge[edgeName] += SectionalAreaOfEdges[iElem, iEdge]
-                    ControlFaceNormalDictPerEdge[edgeName] += LineNormalsOfEdgeFaces[iElem, iEdge, :]*signOfEdge*SectionalAreaOfEdges[iElem, iEdge]
-
-            # exit(1)
-            self.Elements[section_name]["SectionalAreaOfEdges"] = SectionalAreaOfEdges
-            self.Elements[section_name]["ControlFaceNormalDictPerEdge"] = ControlFaceNormalDictPerEdge
+                    PointStart = connectivity[iElem, edge[0]]
+                    PointEnd = connectivity[iElem, edge[1]]
+                    ControlFaceDictPerEdge[PointStart][str(PointEnd)] += SectionalAreaOfEdges[iElem, iEdge]
+                    ControlFaceNormalDictPerEdge[PointStart][str(PointEnd)] += LineNormalsOfEdgeFaces[iElem, iEdge, :]*signOfEdge*SectionalAreaOfEdges[iElem, iEdge]
 
             edgesOfPoints = self.EDGESOFPOINTS_PER_ELEMENT.get(elem_type, 0)
             trias = np.zeros((len(elem_data["connectivity"][:, 0]), 3, 3), dtype=float)
@@ -788,22 +783,16 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Collecting the edge face area from every element")
 
-        for key in ControlFaceDictPerEdge.keys():
-            
-            ControlFaceNormalDictPerEdge[key] = ControlFaceNormalDictPerEdge[key] / ControlFaceDictPerEdge[key]
-
-            # Points = key.split("-")
-            # # print(f"For edge {key} from Coords {self.Nodes[int(Points[0]), :]} to Coords {self.Nodes[int(Points[1]), :]} has normal {ControlFaceNormalDictPerEdge[key]}")
-            # print(f"For edge {key} from Coords {self.Nodes[int(Points[0]), :]} to Coords {self.Nodes[int(Points[1]), :]} has area {ControlFaceDictPerEdge[key]}")
-            # if self.isNodeOnBoundary[int(Points[0])] and self.isNodeOnBoundary[int(Points[1])]:
-            #     print(f"Keep in mind that both nodes are on boundary")
+        for iNode in range(self.n_nodes):
+            for key in ControlFaceDictPerEdge[iNode].keys():
+                
+                ControlFaceNormalDictPerEdge[iNode][key] /= ControlFaceDictPerEdge[iNode][key]
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
         
         self.ControlFaceDictPerEdge = ControlFaceDictPerEdge
         self.ControlFaceNormalDictPerEdge = ControlFaceNormalDictPerEdge
         self.ControlVolumesPerNode = ControlVolumesPerNode
-
 
     def build_DualControlVolumes_3D(self):
 
@@ -816,14 +805,14 @@ class MeshClass:
 
         # Construct a dictionary of edges for each point that will have the area associated to it
         ControlVolumesPerNode = np.zeros((self.n_nodes, ), dtype=float)
-        ControlFaceDictPerEdge = {}
-        ControlFaceNormalDictPerEdge = {}
+        ControlFaceDictPerEdge = [{} for i in range(self.n_nodes)]
+        ControlFaceNormalDictPerEdge = [{} for i in range(self.n_nodes)]
         for iNode in range(self.n_nodes):
 
             neighbors = list(self.NodesConnectedToNode[iNode])
             for neigh in neighbors:
-                ControlFaceDictPerEdge[str(iNode)+"-"+str(neigh)] = 0.0
-                ControlFaceNormalDictPerEdge[str(iNode)+"-"+str(neigh)] = np.array([0.0, 0.0, 0.0])
+                ControlFaceDictPerEdge[iNode][str(neigh)] = 0.0
+                ControlFaceNormalDictPerEdge[iNode][str(neigh)] = np.array([0.0, 0.0, 0.0])
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
 
@@ -831,7 +820,6 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Computing the edges (and faces in 3D) centroids...")
         self.Logger.info("Computing Control Volume and face area between node i and j...")
-        self.Logger.info("REMARK: the face area is the same but the control volume not necessarily!")
 
         # Cycle on each element and pre-compute edges mid-points and faces centers if 3D
         for section_name, elem_data in self.Elements.items():
@@ -870,10 +858,6 @@ class MeshClass:
 
                 edgeName = ''.join(map(str, edge))
 
-                # for iElem in range(len(connectivity[:, 0])):
-                #     if connectivity[iElem, edge[0]] == 999 and connectivity[iElem, edge[1]] == 899:
-                #         print(f" edge name {edgeName} from Coords {self.Nodes[connectivity[iElem, edge[0]], :]} to Coords {self.Nodes[connectivity[iElem, edge[1]], :]}")
-
                 for face in facesOfEdges[iEdge]:
                                             
                     # Compose tria and compute area contribution
@@ -888,26 +872,12 @@ class MeshClass:
                     normal = self._compute_normal_tria(trias)
                     NormalsOfEdgeFaces[:, iEdge, :] += normal * signOfFace * np.repeat(faceAreaContrib[..., np.newaxis], 3, axis=1)
                     SectionalAreaOfEdges[:, iEdge] += faceAreaContrib
-
-                    # for iElem in range(len(connectivity[:, 0])):
-                    #     if connectivity[iElem, edge[0]] == 999 and connectivity[iElem, edge[1]] == 899:
-                    #         print(f"normal = {normal[iElem]} , weighted normal {normal[iElem] * signOfFace * faceAreaContrib[iElem]}")
-                    #         print(f"sign of face {faceName} is {signOfFace}")
-                    #         print(f"sign of edge {signOfEdge}")
-
-                # for iElem in range(len(connectivity[:, 0])):
-                #     if connectivity[iElem, edge[0]] == 999 and connectivity[iElem, edge[1]] == 988899:
-                #         print(f"final normal {NormalsOfEdgeFaces[iElem, iEdge, :]}")
                 
                 for iElem in range(len(connectivity[:, 0])):
-                    edgeName = "-".join(map(str, connectivity[iElem, edge]))
-                    ControlFaceDictPerEdge[edgeName] += SectionalAreaOfEdges[iElem, iEdge]
-                    ControlFaceNormalDictPerEdge[edgeName] += NormalsOfEdgeFaces[iElem, iEdge, :]
-
-            
-            
-            self.Elements[section_name]["SectionalAreaOfEdges"] = SectionalAreaOfEdges
-
+                    PointStart = connectivity[iElem, edge[0]]
+                    PointEnd = connectivity[iElem, edge[1]]
+                    ControlFaceDictPerEdge[PointStart][str(PointEnd)] += SectionalAreaOfEdges[iElem, iEdge]
+                    ControlFaceNormalDictPerEdge[PointStart][str(PointEnd)] += NormalsOfEdgeFaces[iElem, iEdge, :]
 
             edgesOfPoints = self.EDGESOFPOINTS_PER_ELEMENT.get(elem_type, 0)
             tetras = np.zeros((len(elem_data["connectivity"][:, 0]), 4, 3), dtype=float)
@@ -941,25 +911,9 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Collecting the edge face area from every element")
 
-        # AlreadyProcessed = {}
-        # for key in ControlFaceDictPerEdge.keys():
-        #     reverseKey = "-".join(list(reversed(key.split("-"))))
-            
-        #     # It should not matter if I do it twice , but I exclude already processed edges just to be sure
-        #     if not key in AlreadyProcessed.keys():
-        #         dummy = (ControlFaceDictPerEdge[key] + ControlFaceDictPerEdge[reverseKey])
-        #         ControlFaceDictPerEdge[key] = dummy
-        #         ControlFaceDictPerEdge[reverseKey] = dummy
-        #         AlreadyProcessed[key] = True
-        #         AlreadyProcessed[reverseKey] = True
-
-        for key in ControlFaceDictPerEdge.keys():
-            ControlFaceNormalDictPerEdge[key] = ControlFaceNormalDictPerEdge[key] / ControlFaceDictPerEdge[key]
-            
-            # Points = key.split("-")
-            # print(f"For edge {key} from Coords {self.Nodes[int(Points[0]), :]} to Coords {self.Nodes[int(Points[1]), :]} has normal {ControlFaceNormalDictPerEdge[key]}")
-            # print(f"For edge {key} from Coords {self.Nodes[int(Points[0]), :]} to Coords {self.Nodes[int(Points[1]), :]} has area {ControlFaceDictPerEdge[key]}")
-            
+        for iNode in range(self.n_nodes):
+            for key in ControlFaceDictPerEdge[iNode].keys():
+                ControlFaceNormalDictPerEdge[iNode][key] /= ControlFaceDictPerEdge[iNode][key]
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
         

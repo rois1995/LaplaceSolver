@@ -168,36 +168,34 @@ class UnstructuredPoissonSolver:
         ControlFaceNormalDictPerEdge = self.Mesh.ControlFaceNormalDictPerEdge
         ControlVolumesPerNode = self.Mesh.ControlVolumesPerNode
         # Build Laplacian matrix
-        for i in range(N):
-            if i%10000 == 0:
-                self.Logger.info(f"Assembling matrix at point: {i}")
-            neighbors = list(node_neighbors[i])
+        for iNode in range(N):
+            if iNode%10000 == 0:
+                self.Logger.info(f"Assembling matrix at point: {iNode}")
+            neighbors = list(node_neighbors[iNode])
 
-            controlVolume = ControlVolumesPerNode[i]
+            controlVolume = ControlVolumesPerNode[iNode]
 
             if len(neighbors) == 0:
                 # Isolated node
-                A[i, i] = 1.0
-                b[i] = 0.0
+                A[iNode, iNode] = 1.0
+                b[iNode] = 0.0
                 continue
 
             # Interior node: standard Laplacian
             # Approximate: ∇²φ ≈ Σ(φⱼ - φᵢ) / dᵢⱼ²
             diag_val = 0.0
-            for j in neighbors:
-                distVec = self.Mesh.Nodes[j] - self.Mesh.Nodes[i]
+            for jNode in neighbors:
+                distVec = self.Mesh.Nodes[jNode] - self.Mesh.Nodes[iNode]
                 dist = np.linalg.norm(distVec)
-                controlAreaIJ = ControlFaceDictPerEdge[str(i)+"-"+str(j)]
-                proj=1
-                # if self.nDim == 2:
-                faceNormalIJ = ControlFaceNormalDictPerEdge[str(i)+"-"+str(j)]
+                controlAreaIJ = ControlFaceDictPerEdge[iNode][str(jNode)]
+                faceNormalIJ = ControlFaceNormalDictPerEdge[iNode][str(jNode)]
                 proj = np.sum(distVec*faceNormalIJ)/dist
                 coeff = controlAreaIJ * proj/ (dist*controlVolume)
-                A[i, j] = coeff
+                A[iNode, jNode] = coeff
                 diag_val -= coeff
 
-            A[i, i] = diag_val
-            b[i] = self.volume_condition["Value"](self.Mesh.Nodes[i, 0], self.Mesh.Nodes[i, 1], self.Mesh.Nodes[i, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
+            A[iNode, iNode] = diag_val
+            b[iNode] = self.volume_condition["Value"](self.Mesh.Nodes[iNode, 0], self.Mesh.Nodes[iNode, 1], self.Mesh.Nodes[iNode, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
 
         if self.allNeumann:
             A[-1, :] = 1
