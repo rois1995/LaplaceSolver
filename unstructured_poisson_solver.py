@@ -8,7 +8,7 @@ Compatible with NumPy 2.0+
 import sys
 import numpy as np
 import os
-from scipy.sparse import lil_matrix, csr_matrix
+from scipy.sparse import lil_matrix, csr_matrix, coo_matrix
 from scipy.sparse.linalg import spsolve
 from scipy.sparse.linalg import bicgstab, gmres, minres, spilu, LinearOperator
 from pyamg.krylov import fgmres
@@ -17,7 +17,89 @@ from collections import defaultdict
 import warnings
 from Mesh import MeshClass
 import time
+from multiprocessing import Pool
+from Parameters import BC_TYPE_MAP, EXACT_SOLUTION_MAP, FORCE_OR_MOMENT_MAP
 
+os.environ['NUMBA_NUM_THREADS'] = '4'
+
+from numba import njit, prange
+import numba
+
+
+
+@njit(parallel=True)
+def build_CV_fv_system_NumbaParallel_Ext(n_nodes, Nodes, NodesConnectedToNode, 
+                                     ControlFaceDictPerEdge, ControlFaceNormalDictPerEdge,
+                                     ControlVolumesPerNode, NumOfNodesConnectedToNode):
+    """
+    Build finite volume system for Poisson equation using node-based approach
+
+    Parameters:
+    -----------
+    component_idx : int
+        Component index (1, 2, or 3)
+
+    Returns:
+    --------
+    A : sparse matrix
+        System matrix
+    b : array
+        RHS vector
+    """
+
+    N = n_nodes  # Solve at nodes
+
+    node_neighbors = NodesConnectedToNode
+    ControlFaceDictPerEdge = ControlFaceDictPerEdge
+    # if self.nDim == 2:
+    ControlFaceNormalDictPerEdge = ControlFaceNormalDictPerEdge
+    ControlVolumesPerNode = ControlVolumesPerNode
+
+    total_entries = np.sum(NumOfNodesConnectedToNode) + n_nodes
+    offsets = np.zeros(n_nodes + 1, dtype=np.int32)
+    for i in range(n_nodes):
+        offsets[i + 1] = offsets[i] + NumOfNodesConnectedToNode[i]+1
+
+    rows = np.zeros(total_entries, dtype=np.int32)
+    cols = np.zeros(total_entries, dtype=np.int32)
+    data = np.zeros(total_entries, dtype=np.float64)
+
+    # Build Laplacian matrix
+    for iNode in prange(N):
+
+        start_idx = offsets[iNode]
+        
+        neighbors = node_neighbors[iNode]
+        nNeigh = NumOfNodesConnectedToNode[iNode]
+
+        controlVolume = ControlVolumesPerNode[iNode]
+
+        # Interior node: standard Laplacian
+        # Approximate: ∇²φ ≈ Σ(φⱼ - φᵢ) / dᵢⱼ²
+        diag_val = 0.0
+        for jthNode in range(nNeigh):
+            jNode = neighbors[jthNode]
+            distVec = Nodes[jNode] - Nodes[iNode]
+            dist = np.linalg.norm(distVec)
+            controlAreaIJ = ControlFaceDictPerEdge[iNode, jthNode]
+            faceNormalIJ = ControlFaceNormalDictPerEdge[iNode, jthNode]
+            proj = np.sum(distVec*faceNormalIJ)/dist
+            coeff = controlAreaIJ * proj/ (dist*controlVolume)
+
+            
+            rows[start_idx+jthNode] = iNode
+            cols[start_idx+jthNode] = jNode
+            data[start_idx+jthNode] = coeff
+
+            diag_val -= coeff
+
+
+        
+        rows[start_idx+jthNode+1] = iNode
+        cols[start_idx+jthNode+1] = iNode
+        data[start_idx+jthNode+1] = diag_val
+
+    return rows, cols, data
 class UnstructuredPoissonSolver:
     """
     Finite volume/element Poisson solver for unstructured CGNS grids
@@ -38,7 +120,7 @@ class UnstructuredPoissonSolver:
         self.elements = {}
         self.boundary_conditions = {}
         self.volume_condition = 0.0
-        self.exactSolution = options["exactSolution"]
+        self.exactSolution = EXACT_SOLUTION_MAP.get(options["exactSolution"], -1)
         self.boundary_faces = {}
         self.boundary_nodes = {}
         self.n_nodes = 0
@@ -116,9 +198,9 @@ class UnstructuredPoissonSolver:
                 return
 
             self.boundary_conditions[bc_name] = {
-                'BCType': BC[bc_name]['BCType'],
+                'BCType': BC_TYPE_MAP.get(BC[bc_name]['BCType'], -1),
                 'Value': BC[bc_name]['Value'],
-                'typeOfExactSolution': BC[bc_name]['typeOfExactSolution']
+                'typeOfExactSolution': EXACT_SOLUTION_MAP.get(BC[bc_name]['typeOfExactSolution'], -1)
             }
             self.Logger.info(f"Set BC on '{bc_name}': {BC[bc_name]['BCType']} = {BC[bc_name]['Value']}, typeOfExactSolution = {BC[bc_name]['typeOfExactSolution']}")
 
@@ -142,7 +224,10 @@ class UnstructuredPoissonSolver:
         solver.set_boundary_condition("inlet", "neumann", lambda pos: pos[0])
         """
 
-        self.volume_condition = volume_BC
+        self.volume_condition = {
+                'Value': volume_BC['Value'],
+                'typeOfExactSolution': EXACT_SOLUTION_MAP.get(volume_BC['typeOfExactSolution'], -1)
+            }
 
 
     def build_CV_fv_system(self):
@@ -161,6 +246,9 @@ class UnstructuredPoissonSolver:
         b : array
             RHS vector
         """
+
+        # Specify the number of cores to use
+        n_cores = 4  # Use 4 cores
         N = self.Mesh.n_nodes  # Solve at nodes
         A = lil_matrix((N+int(self.allNeumann), N+int(self.allNeumann)))
         b = np.zeros(N+int(self.allNeumann))
@@ -180,6 +268,7 @@ class UnstructuredPoissonSolver:
             neighbors = list(node_neighbors[iNode])
 
             controlVolume = ControlVolumesPerNode[iNode]
+            nNeigh = self.Mesh.NumOfNodesConnectedToNode[iNode]
 
             if len(neighbors) == 0:
                 # Isolated node
@@ -190,11 +279,12 @@ class UnstructuredPoissonSolver:
             # Interior node: standard Laplacian
             # Approximate: ∇²φ ≈ Σ(φⱼ - φᵢ) / dᵢⱼ²
             diag_val = 0.0
-            for jNode in neighbors:
+            for jthNode in range(nNeigh):
+                jNode = neighbors[jthNode]
                 distVec = self.Mesh.Nodes[jNode] - self.Mesh.Nodes[iNode]
                 dist = np.linalg.norm(distVec)
-                controlAreaIJ = ControlFaceDictPerEdge[iNode][str(jNode)]
-                faceNormalIJ = ControlFaceNormalDictPerEdge[iNode][str(jNode)]
+                controlAreaIJ = ControlFaceDictPerEdge[iNode, jthNode]
+                faceNormalIJ = ControlFaceNormalDictPerEdge[iNode, jthNode]
                 proj = np.sum(distVec*faceNormalIJ)/dist
                 coeff = controlAreaIJ * proj/ (dist*controlVolume)
                 A[iNode, jNode] = coeff
@@ -204,11 +294,35 @@ class UnstructuredPoissonSolver:
             b[iNode] = self.volume_condition["Value"](self.Mesh.Nodes[iNode, 0], self.Mesh.Nodes[iNode, 1], self.Mesh.Nodes[iNode, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
 
         return A, b
+    
+    
+    def build_CV_fv_system_NumbaParallel(self):
 
+        N = self.Mesh.n_nodes  # Solve at nodes
 
+        self.Logger.info(f"Building system on interior nodes ({N} nodes)...")
 
+        max_neighbors = max(self.Mesh.NumOfNodesConnectedToNode)
 
-    def apply_CV_BCs(self, A, b, component_idx=1, ForceOrMoment="Force"):
+        # Create rectangular array with padding (e.g., -1 for unused entries)
+        NodesConnectedToNode_rect = np.full((len(self.Mesh.NodesConnectedToNode), max_neighbors), -1, dtype=np.int32)
+        for i, neighbors in enumerate(self.Mesh.NodesConnectedToNode):
+            NodesConnectedToNode_rect[i, :len(list(neighbors))] = np.array(list(neighbors))
+
+        rows, cols, data = build_CV_fv_system_NumbaParallel_Ext(self.Mesh.n_nodes, self.Mesh.Nodes, 
+                                                 NodesConnectedToNode_rect, self.Mesh.ControlFaceDictPerEdge, 
+                                                 self.Mesh.ControlFaceNormalDictPerEdge, self.Mesh.ControlVolumesPerNode, 
+                                                 self.Mesh.NumOfNodesConnectedToNode)
+        
+        A = coo_matrix((data, (rows, cols)), shape=(self.Mesh.n_nodes+int(self.allNeumann), self.Mesh.n_nodes+int(self.allNeumann))).tolil()
+
+        b = np.zeros(N+int(self.allNeumann))
+        b[:N] = self.volume_condition["Value"](self.Mesh.Nodes[:, 0], self.Mesh.Nodes[:, 1], self.Mesh.Nodes[:, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
+        
+        return A, b
+    
+
+    def apply_CV_BCs(self, A, b, component_idx=1, ForceOrMoment=0):
         """
         Build finite volume system for Poisson equation using node-based approach
 
@@ -229,8 +343,12 @@ class UnstructuredPoissonSolver:
         self.Logger.info(f"Applying Boundary Conditions for component {component_idx} ({len(np.where(self.Mesh.isNodeOnBoundary == True)[0])} nodes)...")
 
         ControlVolumesPerNode = self.Mesh.ControlVolumesPerNode
+        NodeOfNodes = self.Mesh.NodesConnectedToNode
 
         actualPoint = 0
+
+        timeEval = 0
+        timeChange = 0
 
         # Build Laplacian matrix
         for iBoundNode in np.where(self.Mesh.isNodeOnBoundary)[0]:
@@ -238,39 +356,27 @@ class UnstructuredPoissonSolver:
             if actualPoint%1000 == 0:
                 self.Logger.info(f"Imposing boundary conditions at point: {iBoundNode}")
 
-            bc_name = self.Mesh.BCsAssociatedToNode[iBoundNode][0]
-            BoundaryCVArea = self.Mesh.boundaryCVArea[iBoundNode]
+            bc_name = self.Mesh.BCsAssociatedToNode[iBoundNode]
             bc_data = self.boundary_conditions[bc_name]
-            bNormal = self.Mesh.boundaryNormal[iBoundNode]
-            if bc_data['BCType'] == 'Neumann':
+            if bc_data['BCType'] == 1:  # Neumann BC
+
+                BoundaryCVArea = self.Mesh.boundaryCVArea[iBoundNode]
+                bNormal = self.Mesh.boundaryNormal[iBoundNode]
+
                 # Neumann BC: ∂φ/∂n = bc_value
                 # Approximate using one-sided difference
-                if callable(bc_data['Value']):
-                    bc_val = np.sum(bc_data['Value'](self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bc_data["typeOfExactSolution"])*bNormal)
-                else:
-                    if bc_data['Value'] == 0: # Farfield
-                        bc_val = 0
-                    elif bc_data['Value'] == 'Normal':
-                        if ForceOrMoment == "Force":
-                            bc_val = bNormal[component_idx]
-                        elif ForceOrMoment == "Moment":
-                            bc_val = np.cross(self.Mesh.Nodes[iBoundNode, :]-self.momentOrigin, bNormal)[component_idx]
-                        else:
-                            self.Logger.error(f"ERROR! ForceOrMoment {ForceOrMoment} not recognized!")
-                            raise
-                    else:
-                        self.Logger.error("ERROR! Unrecognized boundary condition value!")
-                        raise         
-
+                bc_val = bc_data['Value'](self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bNormal, self.momentOrigin, ForceOrMoment, component_idx, bc_data["typeOfExactSolution"])
+                
+                # print(bc_val)
                 b[iBoundNode] = -bc_val*BoundaryCVArea/ControlVolumesPerNode[iBoundNode]
 
-            elif bc_data['BCType'] == 'Dirichlet':
+            elif bc_data['BCType'] == 0: # Dirichlet BC
                 # Dirichlet BC: φ = bc_value
-                bc_val = bc_data['Value']
-                
-                if callable(bc_val):
-                    bc_val = bc_val(self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bc_data["typeOfExactSolution"])
-                A[iBoundNode, :] = 0.0
+
+                bc_val = bc_data['Value'](self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bc_data["typeOfExactSolution"])
+
+                for neigh in NodeOfNodes[iBoundNode]:
+                    A[iBoundNode, neigh] = 0.0
                 A[iBoundNode, iBoundNode] = 1.0
                 b[iBoundNode] = bc_val
                 
@@ -382,7 +488,7 @@ class UnstructuredPoissonSolver:
 
         allNeumann = True
         for bc in self.boundary_conditions.keys():
-            if not self.boundary_conditions[bc]['BCType'] == 'Neumann':
+            if not self.boundary_conditions[bc]['BCType'] == BC_TYPE_MAP.get('Neumann', 0):
                 allNeumann = False
         self.allNeumann = allNeumann
 
@@ -391,7 +497,13 @@ class UnstructuredPoissonSolver:
         
         startTime = time.time()
         self.Logger.info(f"Initializing the A matrix and the b vector for the interior nodes...")
-        A, b = self.build_CV_fv_system()
+        # startTime = time.time()
+        A, b = self.build_CV_fv_system_NumbaParallel()
+        # self.Logger.info(f"With numba. Elapsed time {time.time()-startTime} s.")
+        # startTime = time.time()
+        # A, b = self.build_CV_fv_system()
+        # self.Logger.info(f"Without numba. Elapsed time {time.time()-startTime} s.")
+
         self.Logger.info(f"Finished elaborating interior nodes. Elapsed time {time.time()-startTime} s.")
 
         if self.allNeumann:
@@ -399,7 +511,7 @@ class UnstructuredPoissonSolver:
             A[-1, -1] = 0
             A[:-1, -1] = 1
             b[-1] = 0
-            
+
             # exit(1)
 
         for component_idx in forceComponents:
@@ -408,7 +520,7 @@ class UnstructuredPoissonSolver:
             self.Logger.info('='*60)
 
             startTime = time.time()
-            A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment="Force")
+            A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment=FORCE_OR_MOMENT_MAP.get("Force", 0))
             self.Logger.info(f"Finished applying boundary conditions. Elapsed time {time.time()-startTime} s.")
 
             startTime = time.time()
@@ -422,7 +534,7 @@ class UnstructuredPoissonSolver:
             else:
                 residual = self.verify_solution(A, phi, b)
             
-            if not self.exactSolution == "None":
+            if self.exactSolution >= 0:
                 error = self.computeErrorFromExactSolution(phi)
                 self.Logger.info(f"Error from exact solution = {error}")
                 fid = open('Conv.log', mode='w')
@@ -438,7 +550,7 @@ class UnstructuredPoissonSolver:
                 self.Logger.info(f"\n{'='*60}")
                 self.Logger.info(f"Solving for moment component {component_idx}")
                 self.Logger.info('='*60)
-                A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment="Moment")
+                A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment=FORCE_OR_MOMENT_MAP.get("Moment", 0))
 
                 startTime = time.time()
                 self.Logger.info(f"Starting linear system solver...")
@@ -451,7 +563,7 @@ class UnstructuredPoissonSolver:
                 else:
                     residual = self.verify_solution(A, phi, b)
                 
-                if not self.exactSolution == "None":
+                if self.exactSolution >= 0:
                     error = self.computeErrorFromExactSolution(phi)
                     self.Logger.info(f"Error from exact solution = {error}")
                     fid = open('Conv.log', mode='w')
@@ -584,7 +696,7 @@ class UnstructuredPoissonSolver:
                 phi["Normal_X"] = self.Mesh.boundaryNormal[:, 0]
                 phi["Normal_Y"] = self.Mesh.boundaryNormal[:, 1]
                 phi["Normal_Z"] = self.Mesh.boundaryNormal[:, 2]
-            if not self.exactSolution == "None":
+            if self.exactSolution >= 0:
                 phi["ExactSolution"] = self.exactSolutionFun(self.Mesh.Nodes[:, 0], self.Mesh.Nodes[:, 1], self.Mesh.Nodes[:, 2], self.exactSolution)
 
             # Create mesh

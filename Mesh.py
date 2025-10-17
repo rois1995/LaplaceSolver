@@ -4,6 +4,9 @@ import warnings
 import time
 import sys
 from ElementsUtilities import ElementsUtilities
+from numba.typed import Dict as numbaDict
+from numba import types as numbaTypes
+from Parameters import BC_TYPE_MAP, EXACT_SOLUTION_MAP
 
 class MeshClass:
 
@@ -21,6 +24,7 @@ class MeshClass:
         self.nDim = nDim
         self.Elements = {}
         self.Nodes = None
+        self.NumOfNodesConnectedToNode = None
         self.NodesConnectedToNode = None
         self.CellsConnectedToNode = None
         self.isNodeOnBoundary = None
@@ -215,7 +219,7 @@ class MeshClass:
 
     def SetNodesConnectedToNode(self):
         # Build node-to-node connectivity from elements
-        node_neighbors = defaultdict(set)
+        node_neighbors = [set() for i in range(self.n_nodes)]
         node_cells = [[] for _ in range(self.n_nodes)]
 
         for section_name, elem_data in self.Elements.items():
@@ -241,17 +245,23 @@ class MeshClass:
                     node_cells[iNodeGlobal] = node_cells[iNodeGlobal] + [(iCell, section_name, iNode)]
             
 
+
+        NNeighbors = np.zeros((self.n_nodes,),dtype=int)
+        for iNode in range(self.n_nodes):
+            NNeighbors[iNode] = len(node_neighbors[iNode])
+        
+        self.NumOfNodesConnectedToNode = NNeighbors
         self.NodesConnectedToNode = node_neighbors
-        self.NodesConnectedToNodeTotal = node_neighbors
         self.CellsConnectedToNode = node_cells
 
     def set_boundary_Variables(self, boundary_conditions):
         # Now assign normals to boundary nodes
-            boundaryNormal = np.zeros((len(self.Nodes), 3), dtype=float)
-            HowManyNormals = np.zeros((len(self.Nodes), ), dtype=int)
-            boundaryCVArea = np.zeros((len(self.Nodes), ), dtype=float)
+            boundaryNormal = np.zeros((len(self.Nodes), 3), dtype=np.float64)
+            HowManyNormals = np.zeros((len(self.Nodes), ), dtype=np.int32)
+            boundaryCVArea = np.zeros((len(self.Nodes), ), dtype=np.float64)
+            BCsAssociatedToNode = np.empty((len(self.Nodes), ), dtype='U40')
 
-            BCsAssociatedToNode = [[] for _ in range(self.n_nodes)]
+            # BCsAssociatedToNode = [[] for _ in range(self.n_nodes)]
 
             for bname, bdict in self.boundary_nodes.items():
                 bnodes = bdict['connectivity']
@@ -267,15 +277,13 @@ class MeshClass:
                 boundaryNormal[mask, :] /= np.repeat(HowManyNormals[mask, np.newaxis], 3, axis=1)
 
             for iBoundNode in np.where(self.isNodeOnBoundary)[0]:
-                bcs = []
                 for bname, bdict in self.boundary_nodes.items():
                     bnodes = bdict['connectivity']
                     if iBoundNode in bnodes:
-                        bcs = bcs+[bname]
+                        BCsAssociatedToNode[iBoundNode] = bname  # I don't really care about how many are there,
+                                                                 # since for this problem all nodes belonging
+                                                                 # to the same surface will have the same BC
                         
-                BCsAssociatedToNode[iBoundNode] = bcs
-
-
             self.boundaryNormal = boundaryNormal
             self.BCsAssociatedToNode = BCsAssociatedToNode
             self.boundaryCVArea = boundaryCVArea
@@ -414,15 +422,21 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Collecting the edge face area from every element")
 
+        NodesOfNodes = self.NodesConnectedToNode
+        maxNNeighs = max(self.NumOfNodesConnectedToNode)
+        NumbaControlFaceNormalDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs, 3), -1, dtype=np.float64)
+        NumbaControlFaceDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs), -1, dtype=np.float64)
+
         for iNode in range(self.n_nodes):
-            for key in ControlFaceDictPerEdge[iNode].keys():
-                
-                ControlFaceNormalDictPerEdge[iNode][key] /= ControlFaceDictPerEdge[iNode][key]
+            for iNeigh, neigh in enumerate(NodesOfNodes[iNode]):
+                key = str(neigh)
+                NumbaControlFaceDictPerEdge[iNode, iNeigh] = ControlFaceDictPerEdge[iNode][key]
+                NumbaControlFaceNormalDictPerEdge[iNode, iNeigh] = ControlFaceNormalDictPerEdge[iNode][key]/ControlFaceDictPerEdge[iNode][key]
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
         
-        self.ControlFaceDictPerEdge = ControlFaceDictPerEdge
-        self.ControlFaceNormalDictPerEdge = ControlFaceNormalDictPerEdge
+        self.ControlFaceDictPerEdge = NumbaControlFaceDictPerEdge
+        self.ControlFaceNormalDictPerEdge = NumbaControlFaceNormalDictPerEdge
         self.ControlVolumesPerNode = ControlVolumesPerNode
 
     def build_DualControlVolumes_3D(self):
@@ -542,14 +556,21 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Collecting the edge face area from every element")
 
+        NodesOfNodes = self.NodesConnectedToNode
+        maxNNeighs = max(self.NumOfNodesConnectedToNode)
+        NumbaControlFaceNormalDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs, 3), -1, dtype=np.float64)
+        NumbaControlFaceDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs), -1, dtype=np.float64)
+
         for iNode in range(self.n_nodes):
-            for key in ControlFaceDictPerEdge[iNode].keys():
-                ControlFaceNormalDictPerEdge[iNode][key] /= ControlFaceDictPerEdge[iNode][key]
+            for iNeigh, neigh in enumerate(NodesOfNodes[iNode]):
+                key = str(neigh)
+                NumbaControlFaceDictPerEdge[iNode, iNeigh] = ControlFaceDictPerEdge[iNode][key]
+                NumbaControlFaceNormalDictPerEdge[iNode, iNeigh] = ControlFaceNormalDictPerEdge[iNode][key]/ControlFaceDictPerEdge[iNode][key]
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
         
-        self.ControlFaceDictPerEdge = ControlFaceDictPerEdge
-        self.ControlFaceNormalDictPerEdge = ControlFaceNormalDictPerEdge
+        self.ControlFaceDictPerEdge = NumbaControlFaceDictPerEdge
+        self.ControlFaceNormalDictPerEdge = NumbaControlFaceNormalDictPerEdge
         self.ControlVolumesPerNode = ControlVolumesPerNode
 
         
