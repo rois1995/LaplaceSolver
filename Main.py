@@ -3,6 +3,8 @@ from Parameters import options
 import numpy as np
 from Utils import setup_logging
 
+options.setdefault("momentOrigin", [0, 0, 0])
+
 Logger = setup_logging(options["verbose"])
 
 # Initialize with CGNS file

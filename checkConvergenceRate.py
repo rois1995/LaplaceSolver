@@ -5,12 +5,11 @@ import numpy as np
 BigCases = ["Neumann", "Dirichlet"]
 # TestCases = ["UnitSquare_Struct", "UnitSquare_UnstructAligned", "UnitSquare_Unstruct",  "UnitSquare_UnstructMixedAligned", "UnitSquare_UnstructMixed",  "UnitCube_Struct", "UnitCube_OnlyTets", "UnitCube_OnlyPrisms"]
 # TestCases = ["UnitSquare_Struct", "UnitSquare_UnstructAligned", "UnitSquare_Unstruct",  "UnitSquare_UnstructMixedAligned", "UnitSquare_UnstructMixed"]
-TestCases = ["UnitCube_WithTetsAndPyras"]
+TestCases = ["UnitSquare_Struct" "UnitSquare_Unstruct" "UnitSquare_UnstructMixed" "UnitCube_WithTetsAndPyras"]
 Meshes = ["Coarse", "Medium", "Fine", "VeryFine"]
 cmap = plt.get_cmap('viridis')
 colors = cmap(np.linspace(0, 1, len(TestCases)))
-CaseDim = [2, 2, 2, 2, 2, 3, 3, 3]
-CaseDim = [3]
+CaseDim = [2, 2, 2, 3]
 
 for BigCase in BigCases:
 

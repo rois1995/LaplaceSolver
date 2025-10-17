@@ -16,6 +16,7 @@ from scipy.sparse.csgraph import reverse_cuthill_mckee
 from collections import defaultdict
 import warnings
 from Mesh import MeshClass
+import time
 
 class UnstructuredPoissonSolver:
     """
@@ -63,11 +64,15 @@ class UnstructuredPoissonSolver:
         """
         self.Logger.info(f"Reading CGNS file: {self.GridFileName}")
 
+        startTime = time.time()
+
         try:
             self.Mesh._read_cgns_h5py(options["BlockName"], options["BoundaryConditions"])
         except Exception as e:
             self.Logger.error(f"h5py read failed: {e}. Failed to read CGNS file!")
             raise 
+
+        self.Logger.info(f"Finished reading grid. Elapsed time {time.time()-startTime} s.")
         
     def construct_secondaryMeshStructures(self):
         
@@ -391,16 +396,28 @@ class UnstructuredPoissonSolver:
         #     self.compute_geometric_properties()
 
         
+        startTime = time.time()
+        self.Logger.info(f"Initializing the A matrix and the b vector for the interior nodes...")
         self.Mesh.build_DualControlVolumes()
         A, b = self.build_CV_fv_system()
+        self.Logger.info(f"Finished elaborating interior nodes. Elapsed time {time.time()-startTime} s.")
             # exit(1)
 
         for component_idx in forceComponents:
             self.Logger.info(f"\n{'='*60}")
             self.Logger.info(f"Solving for force component {component_idx}")
             self.Logger.info('='*60)
+
+            startTime = time.time()
+            self.Logger.info(f"Applying boundary conditions...")
             A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment="Force")
+            self.Logger.info(f"Finished applying boundary conditions. Elapsed time {time.time()-startTime} s.")
+
+            startTime = time.time()
+            self.Logger.info(f"Starting linear system solver...")
             phi = self.solve_poisson(A, b, solver, useReordering, solverOptions, component_idx=component_idx)
+            self.Logger.info(f"Linear solver finished. Elapsed time {time.time()-startTime} s.")
+
             if self.allNeumann:
                 phi = phi[:-1]
                 residual = self.verify_solution(A[:-1, :-1], phi, b[:-1])
@@ -424,7 +441,12 @@ class UnstructuredPoissonSolver:
                 self.Logger.info(f"Solving for moment component {component_idx}")
                 self.Logger.info('='*60)
                 A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment="Moment")
+
+                startTime = time.time()
+                self.Logger.info(f"Starting linear system solver...")
                 phi = self.solve_poisson(A, b, solver, useReordering, solverOptions, component_idx=component_idx)
+                self.Logger.info(f"Linear solver finished. Elapsed time {time.time()-startTime} s.")
+                
                 if self.allNeumann:
                     phi = phi[:-1]
                     residual = self.verify_solution(A[:-1, :-1], phi, b[:-1])

@@ -6,6 +6,8 @@ GridName= "Mesh.cgns"
 nDim= 3
 BlockName= "blk-1"
 
+momentOrigin=[0.5, 0.5, 0.0]
+
 debug=1
 
 exactSolution= "Cosine_3D"
@@ -81,5 +83,6 @@ options = {
             'solverOptions': solverOptions,
             'exactSolution': exactSolution,
             'debug': debug,
-            'exactSolutionFun': dirichlet_boundary_condition
+            'exactSolutionFun': dirichlet_boundary_condition,
+            'momentOrigin': momentOrigin
           }
