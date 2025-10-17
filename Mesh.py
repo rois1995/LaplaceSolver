@@ -197,15 +197,21 @@ class MeshClass:
         
 
     def construct_secondaryMeshStructures(self, boundary_conditions):
-
+        
+        startTime = time.time()
         self.Logger.info(f"Constructing NodesConnectedToNode structure...")
         self.SetNodesConnectedToNode()
+        self.Logger.info(f"Finished construction of NodesConnectedToNode structure. Elapsed time {time.time()-startTime} s.")
 
-        self.Logger.info(f"Constructing boundary normals structure...")
+        startTime = time.time()
+        self.Logger.info(f"Constructing boundary structure...")
         self.set_boundary_Variables(boundary_conditions)
+        self.Logger.info(f"Finished construction of boundary structure. Elapsed time {time.time()-startTime} s.")
 
-        self.Logger.info(f"Constructing Cell Volumes and Cell Centers structure...")
+        startTime = time.time()
+        self.Logger.info(f"Constructing Cell Centers structure...")
         self.compute_geometric_properties()
+        self.Logger.info(f"Finished construction of Cell Centers structure. Elapsed time {time.time()-startTime} s.")
 
     def SetNodesConnectedToNode(self):
         # Build node-to-node connectivity from elements
@@ -242,43 +248,38 @@ class MeshClass:
     def set_boundary_Variables(self, boundary_conditions):
         # Now assign normals to boundary nodes
             boundaryNormal = np.zeros((len(self.Nodes), 3), dtype=float)
+            HowManyNormals = np.zeros((len(self.Nodes), ), dtype=int)
             boundaryCVArea = np.zeros((len(self.Nodes), ), dtype=float)
-            BCsAssociatedToNode = [[] for _ in range(self.n_nodes)]
-            for iNode in range(self.n_nodes):
-                bnormal = np.zeros((1,3), dtype=float)
-                bcs = []
-                if self.isNodeOnBoundary[iNode]: # Search only among points on boundaries
-                    for bname, bdict in self.boundary_nodes.items():
-                        bnodes = bdict['connectivity']
-                        if iNode in bnodes:
-                            bcs = bcs+[bname]
-                            bc_name = bname
-                            
-                            if bname in boundary_conditions:
-                                bc_data = boundary_conditions[bname]                                
-                                # Then search among all of the elements
-                                mask = (bnodes == iNode)
-                                boolForElementsWithPoint = (mask).any(axis=1)
-                                normals2Include = bdict['normals'][boolForElementsWithPoint]
-                                bnormal = np.vstack((bnormal, normals2Include))
-                                # print(bdict['BoundaryCVArea'][mask])
-                                boundaryCVArea[iNode] += np.sum(bdict['BoundaryCVArea'][mask])
-                                
-                                # else:
-                                #     if not bc_data['value'] == 0:
-                                #         print("ERROR! Boundary condition of type", bc_data['value'], "not recognized!")
-                                #         exit(1)
 
-                bnormalmean = bnormal
-                if len(bnormal[:, 0]) > 1:
-                    bnormalmean = np.mean(bnormal[1:], axis=0)
-                
-                boundaryNormal[iNode, :] = bnormalmean
-                BCsAssociatedToNode[iNode] = bcs
+            BCsAssociatedToNode = [[] for _ in range(self.n_nodes)]
+
+            for bname, bdict in self.boundary_nodes.items():
+                bnodes = bdict['connectivity']
+                nPointsPerElem = len(bnodes[0, :])
+                normals = bdict['normals']
+                areas = bdict['BoundaryCVArea']
+
+                np.add.at(boundaryNormal, bnodes.flatten(), np.repeat(normals, nPointsPerElem, axis=0))
+                np.add.at(HowManyNormals, bnodes.flatten(), 1)
+                np.add.at(boundaryCVArea, bnodes.flatten(), np.repeat(areas[: ,0], nPointsPerElem, axis=0))
+
+                mask = np.logical_not(HowManyNormals== 0)
+                boundaryNormal[mask, :] /= np.repeat(HowManyNormals[mask, np.newaxis], 3, axis=1)
+
+            for iBoundNode in np.where(self.isNodeOnBoundary)[0]:
+                bcs = []
+                for bname, bdict in self.boundary_nodes.items():
+                    bnodes = bdict['connectivity']
+                    if iBoundNode in bnodes:
+                        bcs = bcs+[bname]
+                        
+                BCsAssociatedToNode[iBoundNode] = bcs
+
 
             self.boundaryNormal = boundaryNormal
             self.BCsAssociatedToNode = BCsAssociatedToNode
             self.boundaryCVArea = boundaryCVArea
+
 
     def compute_geometric_properties(self):
         """

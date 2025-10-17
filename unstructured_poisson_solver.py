@@ -172,6 +172,7 @@ class UnstructuredPoissonSolver:
         # if self.nDim == 2:
         ControlFaceNormalDictPerEdge = self.Mesh.ControlFaceNormalDictPerEdge
         ControlVolumesPerNode = self.Mesh.ControlVolumesPerNode
+
         # Build Laplacian matrix
         for iNode in range(N):
             if iNode%10000 == 0:
@@ -201,12 +202,6 @@ class UnstructuredPoissonSolver:
 
             A[iNode, iNode] = diag_val
             b[iNode] = self.volume_condition["Value"](self.Mesh.Nodes[iNode, 0], self.Mesh.Nodes[iNode, 1], self.Mesh.Nodes[iNode, 2], self.volume_condition["typeOfExactSolution"])  # RHS = 0 for Laplace equation
-
-        if self.allNeumann:
-            A[-1, :] = 1
-            A[-1, -1] = 0
-            A[:-1, -1] = 1
-            b[-1] = 0
 
         return A, b
 
@@ -391,16 +386,20 @@ class UnstructuredPoissonSolver:
                 allNeumann = False
         self.allNeumann = allNeumann
 
-        # Compute geometric properties if not done
-        # if self.cell_volumes is None:
-        #     self.compute_geometric_properties()
 
+        self.Mesh.build_DualControlVolumes()
         
         startTime = time.time()
         self.Logger.info(f"Initializing the A matrix and the b vector for the interior nodes...")
-        self.Mesh.build_DualControlVolumes()
         A, b = self.build_CV_fv_system()
         self.Logger.info(f"Finished elaborating interior nodes. Elapsed time {time.time()-startTime} s.")
+
+        if self.allNeumann:
+            A[-1, :] = 1
+            A[-1, -1] = 0
+            A[:-1, -1] = 1
+            b[-1] = 0
+            
             # exit(1)
 
         for component_idx in forceComponents:
@@ -409,7 +408,6 @@ class UnstructuredPoissonSolver:
             self.Logger.info('='*60)
 
             startTime = time.time()
-            self.Logger.info(f"Applying boundary conditions...")
             A, b = self.apply_CV_BCs(A, b, component_idx=component_idx, ForceOrMoment="Force")
             self.Logger.info(f"Finished applying boundary conditions. Elapsed time {time.time()-startTime} s.")
 
