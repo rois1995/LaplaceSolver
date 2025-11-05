@@ -3,6 +3,8 @@ from collections import defaultdict
 import warnings
 import time
 import sys
+Path2Scripts="./"
+sys.path.insert(1, Path2Scripts)
 from ElementsUtilities import ElementsUtilities
 from numba.typed import Dict as numbaDict
 from numba import types as numbaTypes
@@ -212,15 +214,9 @@ class MeshClass:
         self.set_boundary_Variables(boundary_conditions)
         self.Logger.info(f"Finished construction of boundary structure. Elapsed time {time.time()-startTime} s.")
 
-        startTime = time.time()
-        self.Logger.info(f"Constructing Cell Centers structure...")
-        self.compute_geometric_properties()
-        self.Logger.info(f"Finished construction of Cell Centers structure. Elapsed time {time.time()-startTime} s.")
-
     def SetNodesConnectedToNode(self):
         # Build node-to-node connectivity from elements
         node_neighbors = [set() for i in range(self.n_nodes)]
-        node_cells = [[] for _ in range(self.n_nodes)]
 
         for section_name, elem_data in self.Elements.items():
             elem_type = elem_data['type']
@@ -240,19 +236,22 @@ class MeshClass:
                 # Each node is connected to other nodes in the element
                 # following the NODESCONNECTIONS_PER_ELEMENT 
                 for iNode, iNodeGlobal in enumerate(connectivity[iCell]):
-                    nodeConn = nodesConns_per_elem[iNode]
-                    node_neighbors[iNodeGlobal].update(connectivity[iCell, nodeConn])
-                    node_cells[iNodeGlobal] = node_cells[iNodeGlobal] + [(iCell, section_name, iNode)]
+                    node_neighbors[iNodeGlobal].update(connectivity[iCell, nodesConns_per_elem[iNode]])
             
-
-
         NNeighbors = np.zeros((self.n_nodes,),dtype=int)
         for iNode in range(self.n_nodes):
             NNeighbors[iNode] = len(node_neighbors[iNode])
         
+        max_neighbors = max(NNeighbors)
+
+        # Create rectangular array with padding (e.g., -1 for unused entries)
+        NodesConnectedToNode_rect = np.full((len(node_neighbors), max_neighbors), -1, dtype=np.int32)
+        for i, neighbors in enumerate(node_neighbors):
+            NodesConnectedToNode_rect[i, :len(list(neighbors))] = np.array(list(neighbors))
+        
         self.NumOfNodesConnectedToNode = NNeighbors
-        self.NodesConnectedToNode = node_neighbors
-        self.CellsConnectedToNode = node_cells
+        self.NodesConnectedToNode = NodesConnectedToNode_rect
+
 
     def set_boundary_Variables(self, boundary_conditions):
         # Now assign normals to boundary nodes
@@ -273,8 +272,9 @@ class MeshClass:
                 np.add.at(HowManyNormals, bnodes.flatten(), 1)
                 np.add.at(boundaryCVArea, bnodes.flatten(), np.repeat(areas[: ,0], nPointsPerElem, axis=0))
 
-                mask = np.logical_not(HowManyNormals== 0)
+                mask = np.logical_not(HowManyNormals == 0)
                 boundaryNormal[mask, :] /= np.repeat(HowManyNormals[mask, np.newaxis], 3, axis=1)
+                boundaryNormal[mask, :] /= np.repeat(np.linalg.norm(boundaryNormal[mask, :], axis=1)[:, np.newaxis], 3, axis=1)
 
             for iBoundNode in np.where(self.isNodeOnBoundary)[0]:
                 for bname, bdict in self.boundary_nodes.items():
@@ -288,35 +288,6 @@ class MeshClass:
             self.BCsAssociatedToNode = BCsAssociatedToNode
             self.boundaryCVArea = boundaryCVArea
 
-
-    def compute_geometric_properties(self):
-        """
-        Compute cell volumes, centers for finite volume method
-        """
-        self.Logger.info("Computing geometric properties...")
-
-        cell_volumes = np.array([], dtype=float)
-        cell_centers = np.array([], dtype=float)
-
-        cell_idx = 0
-        for section_name, elem_data in self.Elements.items():
-            elem_type = elem_data['type']
-            connectivity = elem_data['connectivity']
-         
-
-            nodes_per_elem = self.ElementsUtilities.NODES_PER_ELEMENT.get(elem_type, 0)
-            if nodes_per_elem == 0:
-                self.Logger.info(f"  Warning: Unknown element type {elem_type} in '{section_name}'")
-                continue
-
-            elem_nodes = self.Nodes[connectivity]
-
-            # Pretty sure I just need the centroid
-            centers = np.mean(elem_nodes, axis=1)
-
-            # self.Elements[section_name]["CellVolumes"] = volumes
-            self.Elements[section_name]["CellCenters"] = centers
-
     def build_DualControlVolumes(self):
         
         self.Logger.info("-----------------------------")
@@ -326,6 +297,8 @@ class MeshClass:
         if self.nDim == 3:
             self.Logger.info("Building 3D control volumes...")
             self.build_DualControlVolumes_3D()
+
+        # exit(1)
 
         self.Logger.info("-----------------------------")
 
@@ -338,17 +311,13 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Initializing ControlVolumes per Node dictionary...")
 
+        maxNNeighs = max(self.NumOfNodesConnectedToNode)
+        NodesOfNodes = self.NodesConnectedToNode
 
         # Construct a dictionary of edges for each point that will have the area associated to it
-        ControlVolumesPerNode = np.zeros((self.n_nodes, ), dtype=float)
-        ControlFaceDictPerEdge = [{} for i in range(self.n_nodes)]
-        ControlFaceNormalDictPerEdge = [{} for i in range(self.n_nodes)]
-        for iNode in range(self.n_nodes):
-
-            neighbors = list(self.NodesConnectedToNode[iNode])
-            for neigh in neighbors:
-                ControlFaceDictPerEdge[iNode][str(neigh)] = 0.0
-                ControlFaceNormalDictPerEdge[iNode][str(neigh)] = np.array([0.0, 0.0, 0.0])
+        ControlVolumesPerNode = np.zeros((self.n_nodes, ), dtype=np.float64)
+        ControlFaceNormalDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs, 3), 0.0, dtype=np.float64)
+        ControlFaceDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs), 0.0, dtype=np.float64)
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
 
@@ -364,42 +333,63 @@ class MeshClass:
 
             edges_per_elem = self.ElementsUtilities.EDGES_PER_ELEMENT.get(elem_type, 0)
 
+            CellCenters = np.mean(self.Nodes[connectivity], axis=1)
+
             # Compute the median of all the edges
             ElementNodes = self.Nodes[connectivity]
 
+            start= time.time()
+            self.Logger.info(f"Computing edge midpoints...")
+
             edgeCentroids = np.mean(ElementNodes[:, edges_per_elem, :], axis=2)
+            
+            self.Logger.info(f"Done computing edge midpoints. Elapsed time {time.time()-start} s.")
 
             self.Elements[section_name]["edgeCentroids"] = edgeCentroids
             
-            SectionalAreaOfEdges = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem)), dtype=float)
-            LineNormalsOfEdgeFaces = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem), 3), dtype=float)
+            SectionalAreaOfEdges = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem)), dtype=np.float64)
+            LineNormalsOfEdgeFaces = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem), 3), dtype=np.float64)
 
-            lines = np.zeros((len(elem_data["connectivity"][:, 0]), 2, 3), dtype=float)
+            lines = np.zeros((len(elem_data["connectivity"][:, 0]), 2, 3), dtype=np.float64)
 
-            lines[:, 1, :] = elem_data["CellCenters"]
+            lines[:, 1, :] = CellCenters
 
             signOf_EdgesOfElements = self.ElementsUtilities.SIGN_EDGESOFELEMENT_PER_ELEMENT.get(elem_type, 0)
 
             # Now I compute the areas of each edge midpoint
             # Cycle on each edge
+            start= time.time()
+            self.Logger.info(f"Computing edges normals and faces...")
             for iEdge, edge in enumerate(edges_per_elem):
 
                 lines[:, 0, :] = edgeCentroids[:, iEdge]
 
-                LineNormalsOfEdgeFaces[:, iEdge, :] = self.ElementsUtilities._compute_normal_line(lines)
-                SectionalAreaOfEdges[:, iEdge] = self.ElementsUtilities._compute_line_length(lines, toPrint=False)
+                signOfEdge = -signOf_EdgesOfElements[iEdge]
+                edgeAreaContrib = self.ElementsUtilities._compute_line_length(lines, toPrint=False)
 
-                signOfEdge = signOf_EdgesOfElements[iEdge]
+                LineNormalsOfEdgeFaces = self.ElementsUtilities._compute_normal_line(lines) * signOfEdge * np.repeat(edgeAreaContrib[..., np.newaxis], 3, axis=1)
+                SectionalAreaOfEdges = edgeAreaContrib
                 
-                for iElem in range(len(connectivity[:, 0])):
-                    PointStart = connectivity[iElem, edge[0]]
-                    PointEnd = connectivity[iElem, edge[1]]
-                    ControlFaceDictPerEdge[PointStart][str(PointEnd)] += SectionalAreaOfEdges[iElem, iEdge]
-                    ControlFaceNormalDictPerEdge[PointStart][str(PointEnd)] += LineNormalsOfEdgeFaces[iElem, iEdge, :]*signOfEdge*SectionalAreaOfEdges[iElem, iEdge]
+                # It substitutes the for loop right after that is commented out
+                iPoints = connectivity[:, edge[0]]
+                jPoints = connectivity[:, edge[1]]
+
+                ExtractNodesOfNodes = NodesOfNodes[iPoints]
+                indexes = (ExtractNodesOfNodes == jPoints[:, np.newaxis]).argmax(axis=1)
+                np.add.at(ControlFaceDictPerEdge, (iPoints, indexes), SectionalAreaOfEdges)
+                np.add.at(ControlFaceNormalDictPerEdge, (iPoints, indexes), LineNormalsOfEdgeFaces)
+
+                # for iElem in range(len(connectivity[:, 0])):
+                #     PointStart = connectivity[iElem, edge[0]]
+                #     PointEnd = connectivity[iElem, edge[1]]
+                #     ControlFaceDictPerEdge[PointStart][str(PointEnd)] += SectionalAreaOfEdges[iElem, iEdge]
+                #     ControlFaceNormalDictPerEdge[PointStart][str(PointEnd)] += LineNormalsOfEdgeFaces[iElem, iEdge, :]*signOfEdge*SectionalAreaOfEdges[iElem, iEdge]
 
             edgesOfPoints = self.ElementsUtilities.EDGESOFPOINTS_PER_ELEMENT.get(elem_type, 0)
-            trias = np.zeros((len(elem_data["connectivity"][:, 0]), 3, 3), dtype=float)
-            trias[:, 0, :] = elem_data["CellCenters"]
+            trias = np.zeros((len(elem_data["connectivity"][:, 0]), 3, 3), dtype=np.float64)
+            trias[:, 0, :] = CellCenters
+
+            self.Logger.info(f"Done computing edges normals and faces. Elapsed time {time.time()-start} s.")
 
             for iPoint in range(self.ElementsUtilities.NODES_PER_ELEMENT.get(elem_type, 0)):
 
@@ -414,6 +404,10 @@ class MeshClass:
                     trias[:, 2, :] = edgeCentroids[:, edge]
 
                     controlVolumeContrib = self.ElementsUtilities._compute_tria_area(trias, toPrint=False)
+
+                    if len(np.where(controlVolumeContrib == 0.0)[0]) > 0 :
+                        self.Logger.error(f"Cells {np.where(controlVolumeContrib == 0.0)[0]} have zero control volume!")
+
                     # I can already add it to the global index
                     np.add.at(ControlVolumesPerNode, pointsGlobalIndices, controlVolumeContrib)
         
@@ -421,22 +415,14 @@ class MeshClass:
 
         start = time.time()
         self.Logger.info("Collecting the edge face area from every element")
-
-        NodesOfNodes = self.NodesConnectedToNode
-        maxNNeighs = max(self.NumOfNodesConnectedToNode)
-        NumbaControlFaceNormalDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs, 3), -1, dtype=np.float64)
-        NumbaControlFaceDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs), -1, dtype=np.float64)
-
-        for iNode in range(self.n_nodes):
-            for iNeigh, neigh in enumerate(NodesOfNodes[iNode]):
-                key = str(neigh)
-                NumbaControlFaceDictPerEdge[iNode, iNeigh] = ControlFaceDictPerEdge[iNode][key]
-                NumbaControlFaceNormalDictPerEdge[iNode, iNeigh] = ControlFaceNormalDictPerEdge[iNode][key]/ControlFaceDictPerEdge[iNode][key]
+        
+        ControlFaceNormalDictPerEdge /= np.repeat(ControlFaceDictPerEdge[:, :, np.newaxis], 3, axis=2)
+        ControlFaceNormalDictPerEdge /= np.repeat(np.linalg.norm(ControlFaceNormalDictPerEdge, axis=2)[:, :, np.newaxis], 3, axis=2)
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
         
-        self.ControlFaceDictPerEdge = NumbaControlFaceDictPerEdge
-        self.ControlFaceNormalDictPerEdge = NumbaControlFaceNormalDictPerEdge
+        self.ControlFaceDictPerEdge = ControlFaceDictPerEdge
+        self.ControlFaceNormalDictPerEdge = ControlFaceNormalDictPerEdge
         self.ControlVolumesPerNode = ControlVolumesPerNode
 
     def build_DualControlVolumes_3D(self):
@@ -447,61 +433,74 @@ class MeshClass:
         start = time.time()
         self.Logger.info("Initializing ControlVolumes per Node dictionary...")
 
+        maxNNeighs = max(self.NumOfNodesConnectedToNode)
+        NodesOfNodes = self.NodesConnectedToNode
 
         # Construct a dictionary of edges for each point that will have the area associated to it
-        ControlVolumesPerNode = np.zeros((self.n_nodes, ), dtype=float)
-        ControlFaceDictPerEdge = [{} for i in range(self.n_nodes)]
-        ControlFaceNormalDictPerEdge = [{} for i in range(self.n_nodes)]
-        for iNode in range(self.n_nodes):
-
-            neighbors = list(self.NodesConnectedToNode[iNode])
-            for neigh in neighbors:
-                ControlFaceDictPerEdge[iNode][str(neigh)] = 0.0
-                ControlFaceNormalDictPerEdge[iNode][str(neigh)] = np.array([0.0, 0.0, 0.0])
+        ControlVolumesPerNode = np.zeros((self.n_nodes, ), dtype=np.float64)
+        ControlFaceNormalDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs, 3), 0.0, dtype=np.float64)
+        ControlFaceDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs), 0.0, dtype=np.float64)
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
 
 
-        start = time.time()
+        startTotal = time.time()
         self.Logger.info("Computing the edges (and faces in 3D) centroids...")
         self.Logger.info("Computing Control Volume and face area between node i and j...")
 
         # Cycle on each element and pre-compute edges mid-points and faces centers if 3D
         for section_name, elem_data in self.Elements.items():
+
+            self.Logger.info(f"Dealing with {section_name}")
+
             elem_type = elem_data['type']
             connectivity = elem_data['connectivity']
+
+            CellCenters = np.mean(self.Nodes[connectivity], axis=1)
 
             edges_per_elem = self.ElementsUtilities.EDGES_PER_ELEMENT.get(elem_type, 0)
 
             # Compute the median of all the edges
             ElementNodes = self.Nodes[connectivity]
 
+
+            start= time.time()
+            self.Logger.info(f"Computing edge midpoints...")
+
             edgeCentroids = np.mean(ElementNodes[:, edges_per_elem, :], axis=2)
 
-            self.Elements[section_name]["edgeCentroids"] = edgeCentroids
+            self.Logger.info(f"Done computing edge midpoints. Elapsed time {time.time()-start} s.")
+
+            start= time.time()
+            self.Logger.info(f"Computing face centers...")
 
             faces_per_elem = self.ElementsUtilities.FACES_PER_ELEMENT.get(elem_type, 0)
-            faceCentroids = np.zeros((len(connectivity[:, 0]), len(faces_per_elem), 3), dtype=float)
+            faceCentroids = np.zeros((len(connectivity[:, 0]), len(faces_per_elem), 3), dtype=np.float64)
             for iFace, face in enumerate(faces_per_elem):
                 faceCentroids[:, iFace, :] = np.mean(ElementNodes[:, face, :], axis=1)
-            self.Elements[section_name]["FaceCentroids"] = faceCentroids
+
+            self.Logger.info(f"Done computing face centers. Elapsed time {time.time()-start} s.")
 
             facesOfEdges = self.ElementsUtilities.FACESOFEDGES_PER_ELEMENT.get(elem_type, 0)
 
-            SectionalAreaOfEdges = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem)), dtype=float)
-            NormalsOfEdgeFaces = np.zeros((len(elem_data["connectivity"][:, 0]), len(edges_per_elem), 3), dtype=float)
 
-            trias = np.zeros((len(elem_data["connectivity"][:, 0]), 3, 3), dtype=float)
+            trias = np.zeros((len(elem_data["connectivity"][:, 0]), 3, 3), dtype=np.float64)
 
-            trias[:, 0, :] = elem_data["CellCenters"]
+            trias[:, 0, :] = CellCenters
 
             # Now I compute the areas of each edge midpoint
             # Cycle on each edge
+
+            start= time.time()
+            self.Logger.info(f"Computing edges normals and faces...")
             for iEdge, edge in enumerate(edges_per_elem):
 
                 trias[:, 2, :] = edgeCentroids[:, iEdge]
 
                 edgeName = ''.join(map(str, edge))
+
+                SectionalAreaOfEdges = np.zeros((len(elem_data["connectivity"][:, 0]), ), dtype=np.float64)
+                NormalsOfEdgeFaces = np.zeros((len(elem_data["connectivity"][:, 0]), 3), dtype=np.float64)
 
                 for face in facesOfEdges[iEdge]:
                                             
@@ -515,18 +514,34 @@ class MeshClass:
                         signOfFace = 1
                     
                     normal = self.ElementsUtilities._compute_normal_tria(trias)
-                    NormalsOfEdgeFaces[:, iEdge, :] += normal * signOfFace * np.repeat(faceAreaContrib[..., np.newaxis], 3, axis=1)
-                    SectionalAreaOfEdges[:, iEdge] += faceAreaContrib
+                    NormalsOfEdgeFaces[:, :] += normal * signOfFace * np.repeat(faceAreaContrib[..., np.newaxis], 3, axis=1)
+                    SectionalAreaOfEdges[:] += faceAreaContrib
                 
-                for iElem in range(len(connectivity[:, 0])):
-                    PointStart = connectivity[iElem, edge[0]]
-                    PointEnd = connectivity[iElem, edge[1]]
-                    ControlFaceDictPerEdge[PointStart][str(PointEnd)] += SectionalAreaOfEdges[iElem, iEdge]
-                    ControlFaceNormalDictPerEdge[PointStart][str(PointEnd)] += NormalsOfEdgeFaces[iElem, iEdge, :]
+                # It substitutes the for loop right after that is commented out
+                iPoints = connectivity[:, edge[0]]
+                jPoints = connectivity[:, edge[1]]
 
+                ExtractNodesOfNodes = NodesOfNodes[iPoints]
+                indexes = (ExtractNodesOfNodes == jPoints[:, np.newaxis]).argmax(axis=1)
+                np.add.at(ControlFaceDictPerEdge, (iPoints, indexes), SectionalAreaOfEdges)
+                np.add.at(ControlFaceNormalDictPerEdge, (iPoints, indexes), NormalsOfEdgeFaces)
+                
+                # for iElem in range(len(connectivity[:, 0])):
+                #     PointStart = connectivity[iElem, edge[0]]
+                #     PointEnd = connectivity[iElem, edge[1]]
+                #     index = NodesOfNodesDict[PointStart][str(PointEnd)]
+                #     ControlFaceDictPerEdge[PointStart][index] += SectionalAreaOfEdges[iElem]
+                #     ControlFaceNormalDictPerEdge[PointStart][index] += NormalsOfEdgeFaces[iElem, :]
+            
+
+            self.Logger.info(f"Done computing edges normals and faces. Elapsed time {time.time()-start} s.")
+
+
+            start= time.time()
+            self.Logger.info(f"Computing Control volumes...")
             edgesOfPoints = self.ElementsUtilities.EDGESOFPOINTS_PER_ELEMENT.get(elem_type, 0)
-            tetras = np.zeros((len(elem_data["connectivity"][:, 0]), 4, 3), dtype=float)
-            tetras[:, 0, :] = elem_data["CellCenters"]
+            tetras = np.zeros((len(elem_data["connectivity"][:, 0]), 4, 3), dtype=np.float64)
+            tetras[:, 0, :] = CellCenters
 
             for iPoint in range(self.ElementsUtilities.NODES_PER_ELEMENT.get(elem_type, 0)):
 
@@ -546,31 +561,49 @@ class MeshClass:
                         tetras[:, 3, :] = faceCentroids[:, face, :]
                         controlVolumeContrib = self.ElementsUtilities._compute_tetra_volume(tetras, toPrint=False)
 
+                        if len(np.where(controlVolumeContrib == 0.0)[0]) > 0 :
+                            self.Logger.error(f"Cells {np.where(controlVolumeContrib == 0.0)[0]} have zero control volume!")
+
                         # I can already add it to the global index
                         np.add.at(ControlVolumesPerNode, pointsGlobalIndices, controlVolumeContrib)
         
-        # exit(1)
+            self.Logger.info(f"Done computing Control volumes. Elapsed time {time.time()-start} s.")
 
-        self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
+            self.Logger.info("")
+
+        if len(np.where(ControlVolumesPerNode == 0.0)[0]) > 0 :
+            self.Logger.error(f"Points {np.where(ControlVolumesPerNode == 0.0)[0]} have zero control volume!")
+            # exit(1)
+
+        self.Logger.info(f"Done! Elapsed time {str(time.time()-startTotal)} s")
 
         start = time.time()
         self.Logger.info("Collecting the edge face area from every element")
+        
+        ControlFaceNormalDictPerEdge /= np.repeat(ControlFaceDictPerEdge[:, :, np.newaxis], 3, axis=2)
+        ControlFaceNormalDictPerEdge /= np.repeat(np.linalg.norm(ControlFaceNormalDictPerEdge, axis=2)[:, :, np.newaxis], 3, axis=2)
 
-        NodesOfNodes = self.NodesConnectedToNode
-        maxNNeighs = max(self.NumOfNodesConnectedToNode)
-        NumbaControlFaceNormalDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs, 3), -1, dtype=np.float64)
-        NumbaControlFaceDictPerEdge = np.full((len(NodesOfNodes), maxNNeighs), -1, dtype=np.float64)
+        # for iNode in range(self.n_nodes):
+        #     for iNeigh in range(self.NumOfNodesConnectedToNode[iNode]):
+        #         neigh = self.NodesConnectedToNode[iNode, iNeigh]
+        #         neighs_j = self.NodesConnectedToNode[neigh]
+        #         whereIsINode = np.where(neighs_j == iNode)[0]
+        #         print(f"iNode {iNode} has jNode {neigh} as neigh in position {iNeigh}")
+        #         print(f"jNode {neigh} has iNode {iNode} as neigh in position {whereIsINode[0]}")
+        #         print(f"the normal iNode->jNode = {ControlFaceNormalDictPerEdge[iNode, iNeigh]} the normal jNode->iNode = {ControlFaceNormalDictPerEdge[neigh, whereIsINode]}")
+        #         if np.linalg.norm(ControlFaceNormalDictPerEdge[iNode, iNeigh]+ControlFaceNormalDictPerEdge[neigh, whereIsINode]) > 1e-12:
+        #             print("ERROR!")
+        #             exit(1)
+        #         print("")
 
-        for iNode in range(self.n_nodes):
-            for iNeigh, neigh in enumerate(NodesOfNodes[iNode]):
-                key = str(neigh)
-                NumbaControlFaceDictPerEdge[iNode, iNeigh] = ControlFaceDictPerEdge[iNode][key]
-                NumbaControlFaceNormalDictPerEdge[iNode, iNeigh] = ControlFaceNormalDictPerEdge[iNode][key]/ControlFaceDictPerEdge[iNode][key]
+        # for iPoint in range(self.n_nodes):
+        #     if np.isnan(ControlFaceDictPerEdge[iPoint]).any():
+        #         self.Logger.error(f"for point {iPoint} I have nans in positions {np.where(np.isnan(ControlFaceDictPerEdge[iPoint]))[0]}")
 
         self.Logger.info(f"Done! Elapsed time {str(time.time()-start)} s")
         
-        self.ControlFaceDictPerEdge = NumbaControlFaceDictPerEdge
-        self.ControlFaceNormalDictPerEdge = NumbaControlFaceNormalDictPerEdge
+        self.ControlFaceDictPerEdge = ControlFaceDictPerEdge
+        self.ControlFaceNormalDictPerEdge = ControlFaceNormalDictPerEdge
         self.ControlVolumesPerNode = ControlVolumesPerNode
 
         

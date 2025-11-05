@@ -1,3 +1,6 @@
+import sys
+Path2Scripts="./Scripts"
+sys.path.insert(1, Path2Scripts)
 from unstructured_poisson_solver import UnstructuredPoissonSolver
 from Parameters import options
 import numpy as np
@@ -7,7 +10,7 @@ from Utils import setup_logging
 
 options.setdefault("momentOrigin", [0, 0, 0])
 
-Logger = setup_logging(options["verbose"])
+Logger = setup_logging(filenameOut='output.log', filenameErr='error.log', verbose=options["verbose"])
 
 # Initialize with CGNS file
 
@@ -15,7 +18,7 @@ solver = UnstructuredPoissonSolver(options, Logger)
 
 
 
-solver.set_num_threads(4)
+# solver.set_num_threads(48)
 
 # Read unstructured grid
 solver.read_cgns_unstructured(options)
@@ -43,8 +46,11 @@ if options["nDim"] == 3:
 if not (options["exactSolution"] == "None"):
     momentComponents = []
 
-solutions = solver.solve_components(forceComponents=forceComponents, momentComponents=momentComponents, solver=options["solverName"], useReordering=False, solverOptions=options["solverOptions"])
+# forceComponents=[]
+# momentComponents=[0]
+
+solutions = solver.solve_components(forceComponents=forceComponents, momentComponents=momentComponents, solver=options["solverName"], useReordering=options["useReordering"], solverOptions=options["solverOptions"])
 
 
 # Export to VTK for visualization in ParaView
-solver.export_solution_vtk(solutions, "solution_"+options["solverName"]+"_"+options["caseName"]+".vtu")
+solver.export_solution_vtk(solutions, "solution_"+options["solutionName"]+"_"+options["caseName"]+".vtu")

@@ -59,7 +59,7 @@ class ElementsUtilities:
 
         10: [[0, 2, 3], [0, 1, 4], [1, 2, 5], [3, 4, 5]],   # TETRA_4
 
-        12: [[], [], [], [], []],   # PYRA_5
+        12: [[0, 4, 11], [1, 5, 8], [2, 6, 9], [3, 7, 10], [12, 13, 14, 15]],   # PYRA_5
 
         14: [[0, 2, 6], [0, 1, 7], [1, 2, 8], 
              [3, 5, 6], [3, 4, 7], [4, 5, 8]],   # PENTA_6
@@ -216,7 +216,7 @@ class ElementsUtilities:
         centroid = np.mean(nodes, axis=1)
         nodesOfPoints = self.NODESCONNECTIONS_PER_ELEMENT.get(5, 0)
 
-        CVAreas = np.zeros((nodes[:, :, 0].shape), dtype=float)
+        CVAreas = np.zeros((nodes[:, :, 0].shape), dtype=np.float64)
         Points = np.zeros((len(nodes[:, 0, 0]), 4, 3))
         Points[:, 2, :] = centroid
 
@@ -262,7 +262,7 @@ class ElementsUtilities:
         centroid = np.mean(nodes, axis=1)
         nodesOfPoints = self.NODESCONNECTIONS_PER_ELEMENT.get(7, 0)
         
-        CVAreas = np.zeros((nodes[:, :, 0].shape), dtype=float)
+        CVAreas = np.zeros((nodes[:, :, 0].shape), dtype=np.float64)
         Points = np.zeros((len(nodes[:, 0, 0]), 4, 3))
         Points[:, 2, :] = centroid
 

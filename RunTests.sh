@@ -12,12 +12,13 @@ function createLink() {
 
 HOME="$(pwd)"
 
-declare -a BigCaseNames=("Neumann" "Dirichlet")
-# declare -a BigCaseNames=("Dirichlet")
+# declare -a BigCaseNames=("Neumann" "Dirichlet")
+declare -a BigCaseNames=("Dirichlet")
 # declare -a TestCaseNames=("UnitSquare_Struct" "UnitCube_Struct")
 # declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_UnstructAligned" "UnitSquare_Unstruct" "UnitSquare_UnstructMixedAligned" "UnitSquare_UnstructMixed" "UnitCube_Struct" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms")
 # declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_UnstructAligned" "UnitSquare_Unstruct" "UnitSquare_UnstructMixedAligned" "UnitSquare_UnstructMixed")
-declare -a TestCaseNames=( "UnitSquare_Struct" "UnitSquare_Unstruct" "UnitCube_Struct" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms" "UnitCube_WithTetsAndPyras")
+# declare -a TestCaseNames=( "UnitSquare_Struct" "UnitSquare_Unstruct" "UnitCube_Struct" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms" "UnitCube_WithTetsAndPyras")
+declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_Unstruct" "UnitSquare_UnstructAligned")
 # declare -a TestCaseNames=("UnitCube_Struct" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms")
 CleanFolder=0
 Verbose=Silent
@@ -50,7 +51,7 @@ do
       createLink $HOME/Meshes/${TestCase}_${mesh}.cgns Mesh.cgns
 
 
-      cp -r $HOME/*.py . && rm Parameters.py && cp Parameters_ToUse.py Parameters.py
+      cp -r $HOME/Main.py . && cp -r $HOME/Scripts . && cp Parameters_ToUse.py Parameters.py
 
       if [ $Verbose == "Silent" ]
       then
@@ -58,8 +59,6 @@ do
       else
         sed -i 's/^\s*verbose=.*$/verbose= True/' Parameters.py
       fi
-
-      sed -i 's/^\s*solverName=.*$/solverName= "bicgstab"/' Parameters.py
 
       source /home/rausa/PythonVirtualEnvironments/Python3.8.10/bin/activate
 
@@ -75,7 +74,7 @@ do
 
         mv Parameters_ToUse.py ../dummy.py
 
-        rm *.py
+        rm -r Main.py Parameters.py Scripts
 
         if [ $CleanFolder == 1 ]
         then

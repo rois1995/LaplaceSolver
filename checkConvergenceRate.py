@@ -3,9 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 BigCases = ["Neumann", "Dirichlet"]
+BigCases = ["Dirichlet"]
 # TestCases = ["UnitSquare_Struct", "UnitSquare_UnstructAligned", "UnitSquare_Unstruct",  "UnitSquare_UnstructMixedAligned", "UnitSquare_UnstructMixed",  "UnitCube_Struct", "UnitCube_OnlyTets", "UnitCube_OnlyPrisms"]
 # TestCases = ["UnitSquare_Struct", "UnitSquare_UnstructAligned", "UnitSquare_Unstruct",  "UnitSquare_UnstructMixedAligned", "UnitSquare_UnstructMixed"]
-TestCases = ["UnitSquare_Struct", "UnitSquare_Unstruct", "UnitCube_Struct", "UnitCube_OnlyTets", "UnitCube_OnlyPrisms", "UnitCube_WithTetsAndPyras"]
+TestCases = ["UnitCube_Struct", "UnitCube_OnlyTets", "UnitCube_OnlyPrisms", "UnitCube_WithTetsAndPyras"]
+TestCases = ["UnitSquare_Struct", "UnitSquare_Unstruct", "UnitSquare_UnstructAligned"]
 Meshes = ["Coarse", "Medium", "Fine", "VeryFine"]
 cmap = plt.get_cmap('viridis')
 colors = cmap(np.linspace(0, 1, len(TestCases)))

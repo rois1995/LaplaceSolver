@@ -29,13 +29,13 @@ verbose=True
 
 GridName= "Mesh.cgns"
 nDim= 2
-BlockName= "dom-1"
+BlockName= "dom-2"
 
 momentOrigin=[0.5, 0.5, 0.0]
 
 debug=1
 
-exactSolution= "Parabolic_2D"
+exactSolution= "Cosine_2D"
 caseName = GridName.split(".")[0]+"_"+exactSolution + "_CVSolution"
 
 @njit

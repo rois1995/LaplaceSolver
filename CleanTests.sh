@@ -12,11 +12,11 @@ function createLink() {
 
 HOME="$(pwd)"
 
-declare -a BigCaseNames=("Neumann" "Dirichlet")
-# declare -a BigCaseNames=("Dirichlet")
+# declare -a BigCaseNames=("Neumann" "Dirichlet")
+declare -a BigCaseNames=("Dirichlet")
 # declare -a TestCaseNames=("UnitSquare_Struct" "UnitCube_Struct")
 # declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_UnstructAligned" "UnitSquare_Unstruct" "UnitSquare_UnstructMixedAligned" "UnitSquare_UnstructMixed" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms")
-declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_Unstruct" "UnitCube_Struct" "UnitCube_OnlyTets" "UnitCube_OnlyPrisms" "UnitCube_WithTetsAndPyras")
+declare -a TestCaseNames=("UnitSquare_Struct" "UnitSquare_Unstruct")
 
 
 

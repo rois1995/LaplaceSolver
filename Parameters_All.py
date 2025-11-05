@@ -24,18 +24,19 @@ FORCE_OR_MOMENT_MAP = {
     'Moment': 1
 }
 
-
 verbose=True
 
+# GridName= "IsolatedCube_Unstr.cgns"
 GridName= "Mesh.cgns"
 nDim= 2
+# BlockName= "blk-1"
 BlockName= "dom-1"
 
-momentOrigin=[0.5, 0.5, 0.0]
+momentOrigin=[-1.725, 0.0, 0.0]
 
 debug=1
 
-exactSolution= "Parabolic_2D"
+exactSolution= "Cosine_2D"
 caseName = GridName.split(".")[0]+"_"+exactSolution + "_CVSolution"
 
 @njit
@@ -122,13 +123,44 @@ def neumann_boundary_condition(x, y, z, normal, momentOrigin, forceOrMoment=0, c
         print("ERROR! Unknown Exact Solution!")
 
 
-
     
 
 
 BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': 'Zero' },
+#                       'Wall': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': 'Normal' }}
+
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'quad', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'tri_Farfield': {'Elem_type': 'tri', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution },
+#                      'quad_Farfield': {'Elem_type': 'quad', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'tri', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'tri', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution },
+#                       'tri_Body': {'Elem_type': 'tri', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution },
+#                       'quad_Body': {'Elem_type': 'quad', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'tri', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution },
+#                       'tri_Body': {'Elem_type': 'tri', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution },
+#                       'quad_Body': {'Elem_type': 'quad', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
+# BoundaryConditions= { 'Farfield': {'Elem_type': 'tri', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': 'Zero' },
+#                       'tri_Body': {'Elem_type': 'tri', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': 'Normal' },
+#                       'quad_Body': {'Elem_type': 'quad', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': 'Normal' }}
 
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
+
+
+# solverName=['spsolve']
+# solverOptions = {}
+
+# solverName= ["sas"]
+# solverOptions= {
+#                 'maxiter':[500],
+#                 'use_precon': [True],
+#                 'preconName': ['AMG']
+#                 }
 
 
 solveParallel= False
@@ -140,6 +172,15 @@ solverOptions= {
                 'preconName': ['AMG'],
                 'solveParallel': solveParallel
                 }
+
+# solverName= ["minres"]
+# solverOptions= {
+#                 'maxiter':[2000],
+#                 'use_precon': [False],
+#                 'preconName': ['Jacobi'],
+#                 'solveParallel': solveParallel
+#                 }
+
 
 solutionName= solverName[0]
 if len(solverName) > 1:

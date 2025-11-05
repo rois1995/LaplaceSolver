@@ -1,18 +1,18 @@
 import logging
 import sys
 
-def setup_logging(verbose=True):
+def setup_logging(filenameOut='output.log', filenameErr='error.log', verbose=True):
     # Create loggers
     logger = logging.getLogger('main')
     logger.setLevel(logging.DEBUG)
 
     # File handler for normal output
-    fh_out = logging.FileHandler('output.log', mode='w')
+    fh_out = logging.FileHandler(filenameOut, mode='w')
     fh_out.setLevel(logging.INFO)
     fh_out.setFormatter(logging.Formatter('%(message)s'))
 
     # File handler for errors
-    fh_err = logging.FileHandler('error.log', mode='w')
+    fh_err = logging.FileHandler(filenameErr, mode='w')
     fh_err.setLevel(logging.ERROR)
     fh_err.setFormatter(logging.Formatter('%(message)s'))
     
