@@ -121,12 +121,7 @@ def neumann_boundary_condition(x, y, z, normal, momentOrigin, forceOrMoment=0, c
     else:
         print("ERROR! Unknown Exact Solution!")
 
-
-
-    
-
-
-BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Dirichlet', 'Value': dirichlet_boundary_condition, 'typeOfExactSolution': exactSolution }}
+BoundaryConditions= { 'Farfield': {'Elem_type': 'line', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
 
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 

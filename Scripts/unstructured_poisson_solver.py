@@ -88,7 +88,7 @@ def build_CV_fv_system_NumbaParallel_Ext(n_nodes, Nodes, NodesConnectedToNode,
             controlAreaIJ = ControlFaceDictPerEdge[iNode, jthNode]
             faceNormalIJ = ControlFaceNormalDictPerEdge[iNode, jthNode]
             proj = np.sum(distVec*faceNormalIJ)/dist
-            coeff = -controlAreaIJ * proj/ (dist*controlVolume)
+            coeff = controlAreaIJ * proj/ (dist*controlVolume)
 
             if np.isinf(coeff):
                 print(f"point {iNode} connected to point {jNode} has coeff = infs. Other values are controlVolume = {controlVolume}, dist = {dist}, controlAreaIJ = {controlAreaIJ}, faceNormalIJ = {faceNormalIJ}")
@@ -285,7 +285,7 @@ class UnstructuredPoissonSolver:
                 controlAreaIJ = ControlFaceDictPerEdge[iNode, jthNode]
                 faceNormalIJ = ControlFaceNormalDictPerEdge[iNode, jthNode]
                 proj = np.sum(distVec*faceNormalIJ)/dist
-                coeff = -controlAreaIJ * proj/ (dist*controlVolume)
+                coeff = controlAreaIJ * proj/ (dist*controlVolume)
                 A[iNode, jNode] = coeff
                 diag_val -= coeff
                 s += coeff * (exactSol[jNode] - exactSol[iNode])
@@ -363,6 +363,14 @@ class UnstructuredPoissonSolver:
         extFlux= 0.0
         intFlux = np.sum(b[:N]*ControlVolumesPerNode)
 
+        totBoundaryArea = 0.0
+        totBoundaryNormalLength = 0.0
+        totBoundaryNormal = np.zeros(3)
+        totBoundaryNormalTimesArea = np.zeros(3)
+
+        DirichletNodes = np.full((N, 1), False)
+
+        self.Logger.info(f"N Of Points on boundary = {(np.where(self.Mesh.isNodeOnBoundary)[0]).size}")
 
         # Build Laplacian matrix
         for iBoundNode in np.where(self.Mesh.isNodeOnBoundary)[0]:
@@ -384,21 +392,53 @@ class UnstructuredPoissonSolver:
                 # print(bc_val)
                 b[iBoundNode] -= bc_val*BoundaryCVArea/ControlVolumesPerNode[iBoundNode]
                 extFlux += bc_val*BoundaryCVArea
+                totBoundaryArea+=BoundaryCVArea
+                totBoundaryNormal+=-bNormal
+                totBoundaryNormalLength += np.linalg.norm(bNormal)
+                totBoundaryNormalTimesArea+=-bNormal*BoundaryCVArea
 
             elif bc_data['BCType'] == 0: # Dirichlet BC
                 # Dirichlet BC: φ = bc_value
 
-                bc_val = bc_data['Value'](self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bc_data["typeOfExactSolution"])
+                # bc_val = bc_data['Value'](self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bc_data["typeOfExactSolution"])
 
-                A[iBoundNode, :] = 0
-                A[iBoundNode, iBoundNode] = 1.0
-                b[iBoundNode] = bc_val
+                DirichletNodes[iBoundNode] = True
+                # for jthNode in range(NumOfNodeOfNodes[iBoundNode]):
+                #     jNode = NodeOfNodes[iBoundNode, jthNode]
+                #     b[jNode] -= A[jNode, iBoundNode] * bc_val
+
+                # A[iBoundNode, :] = 0
+                # A[:, iBoundNode] = 0
+                # A[iBoundNode, iBoundNode] = 1.0
+                # b[iBoundNode] = bc_val
                 
             actualPoint+= 1
         
-        print(f"AAAAAAAAAAAAAAAAaa extFlux = {extFlux}")
-        print(f"AAAAAAAAAAAAAAAAaa intFlux = {intFlux}")
-        print(f"AAAAAAAAAAAAAAAAaa sumFlux = {np.sum(b[:N]*ControlVolumesPerNode)}")
+        if len(np.where(DirichletNodes)[0]) > 0:
+            self.Logger.info(f"Dealing with {len(np.where(DirichletNodes)[0])} Dirichlet nodes in an efficient way")
+            A_csc = A.tocsc()
+            bc_val = bc_data['Value'](self.Mesh.Nodes[np.where(DirichletNodes)[0], 0], self.Mesh.Nodes[np.where(DirichletNodes)[0], 1], self.Mesh.Nodes[np.where(DirichletNodes)[0], 2], bc_data["typeOfExactSolution"])
+            DiricNodsIds = np.where(DirichletNodes)[0]
+            for i,uD in zip(DiricNodsIds, bc_val):
+                col_slice = slice(A_csc.indptr[i], A_csc.indptr[i+1])
+                col_data = A_csc.data[col_slice]
+                b -= (A_csc[:, i].toarray().ravel()) * uD
+                A_csc.data[col_slice] = 0.0
+
+            A = A_csc.tocsr()
+            for i,uD in zip(DiricNodsIds, bc_val):
+                row_slice = slice(A.indptr[i], A.indptr[i+1])
+                A.data[row_slice] = 0.0
+                A[i,i] = 1.0
+                b[i] = uD
+        
+        self.Logger.info(f"AAAAAAAAAAAAAAAAaa extFlux = {extFlux}")
+        self.Logger.info(f"AAAAAAAAAAAAAAAAaa intFlux = {intFlux}")
+        self.Logger.info(f"AAAAAAAAAAAAAAAAaa sumFlux = {np.sum(b[:N]*ControlVolumesPerNode)}")
+        self.Logger.info(f"AAAAAAAAAAAAAAAAaa total boundary area = {totBoundaryArea}")
+        self.Logger.info(f"AAAAAAAAAAAAAAAAaa total boundary normal = {totBoundaryNormal}")
+        self.Logger.info(f"AAAAAAAAAAAAAAAAaa total boundary normal length = {totBoundaryNormalLength}")
+        self.Logger.info(f"AAAAAAAAAAAAAAAAaa total boundary area*normal = {totBoundaryNormalTimesArea}")
         # print(A.diagonal())
         return A, b
 
@@ -570,16 +610,16 @@ class UnstructuredPoissonSolver:
         n = A.shape[0]
         nnz = A.nnz
 
-        self.Logger.info(f"-------------------------------------")
-        self.Logger.info(f"A.shape = {A.shape}")
-        self.Logger.info(f"A.data.shape = {A.data.shape}")
-        self.Logger.info(f"A.indices.shape = {A.indices.shape}")
-        self.Logger.info(f"A.indptr.shape = {A.indptr.shape}")
-        self.Logger.info(f"A.data = {A.data}")
-        self.Logger.info(f"A.indices = {A.indices}")
-        self.Logger.info(f"A.indptr = {A.indptr}")
-        self.Logger.info(f"A.nnz = {A.nnz}")
-        self.Logger.info(f"-------------------------------------")
+        # self.Logger.info(f"-------------------------------------")
+        # self.Logger.info(f"A.shape = {A.shape}")
+        # self.Logger.info(f"A.data.shape = {A.data.shape}")
+        # self.Logger.info(f"A.indices.shape = {A.indices.shape}")
+        # self.Logger.info(f"A.indptr.shape = {A.indptr.shape}")
+        # self.Logger.info(f"A.data = {A.data}")
+        # self.Logger.info(f"A.indices = {A.indices}")
+        # self.Logger.info(f"A.indptr = {A.indptr}")
+        # self.Logger.info(f"A.nnz = {A.nnz}")
+        # self.Logger.info(f"-------------------------------------")
 
         start = time.time()
         

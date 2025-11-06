@@ -12,6 +12,8 @@ EXACT_SOLUTION_MAP = {
     'Cosine_2D': 1,
     'Parabolic_3D': 2,
     'Parabolic_2D': 3,
+    'Linear_3D': 4,
+    'Linear_2D': 5,
     'None': -100,
     'Normal': -1,
     'Zero': -2,
@@ -21,6 +23,7 @@ FORCE_OR_MOMENT_MAP = {
     'Force' : 0,
     'Moment': 1
 }
+
 
 verbose=True
 
@@ -42,6 +45,8 @@ def vol_condition(x, y, z, typeOfExactSolution=-1):
         return -12 * (np.pi**2) * np.cos(2*np.pi*x) * np.cos(2*np.pi*y) * np.cos(2*np.pi*z)
     elif typeOfExactSolution == 2 or typeOfExactSolution == 3:
         return np.ones((len(x), ), dtype=float)
+    elif typeOfExactSolution == 4 or typeOfExactSolution == 5:
+        return np.zeros((len(x), ), dtype=float)
     elif typeOfExactSolution == 1:
         return -8 * (np.pi**2) * np.cos(2*np.pi*x) * np.cos(2*np.pi*y)
     elif typeOfExactSolution == -100:
@@ -59,6 +64,15 @@ def dirichlet_boundary_condition(x, y, z, typeOfExactSolution=-1):
         return np.cos(2*np.pi*x) * np.cos(2*np.pi*y)
     elif typeOfExactSolution == 3:
         return (x**2+y**2)/4
+    elif typeOfExactSolution == 4:
+        a = 2
+        b = 2
+        c = 2
+        return a*x+b*y+c*z
+    elif typeOfExactSolution == 5:
+        a = 2
+        b = 2
+        return a*x+b*y
     else:
         print("ERROR! Unknown Exact Solution!")
 
@@ -76,6 +90,14 @@ def neumann_boundary_condition(x, y, z, normal, momentOrigin, forceOrMoment=0, c
         BC[1] = 2*y/6
         BC[2] = 2*z/6
         return np.sum(BC*normal)
+    elif typeOfExactSolution == 4:
+        a = 2
+        b = 2
+        c = 2
+        BC[0] = a
+        BC[1] = b
+        BC[2] = c
+        return np.sum(BC*normal)
     elif typeOfExactSolution == 1:
         BC[0] = -2*np.pi*np.sin(2*np.pi*x) * np.cos(2*np.pi*y)
         BC[1] = -2*np.pi*np.cos(2*np.pi*x) * np.sin(2*np.pi*y)
@@ -83,6 +105,12 @@ def neumann_boundary_condition(x, y, z, normal, momentOrigin, forceOrMoment=0, c
     elif typeOfExactSolution == 3:
         BC[0] = 2*x/4
         BC[1] = 2*y/4
+        return np.sum(BC*normal)
+    elif typeOfExactSolution == 5:
+        a = 2
+        b = 2
+        BC[0] = a
+        BC[1] = b
         return np.sum(BC*normal)
     elif typeOfExactSolution == -1:  # normal BC, choose between Force and Moment
         if forceOrMoment == 0:
@@ -96,18 +124,28 @@ def neumann_boundary_condition(x, y, z, normal, momentOrigin, forceOrMoment=0, c
 
 
 
+
 BoundaryConditions= { 'tri_Farfield': {'Elem_type': 'tri', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution },
                       'quad_Farfield': {'Elem_type': 'quad', 'BCType': 'Neumann', 'Value': neumann_boundary_condition, 'typeOfExactSolution': exactSolution }}
 
 VolumeCondition= {'Value': vol_condition, 'typeOfExactSolution': exactSolution}
 
 
+solveParallel= False
 
-solverName= "bicgstab"
+solverName= ["fgmres"]
 solverOptions= {
-                'maxiter':10000,
-                'fill_factor': 2
+                'maxiter':[2000],
+                'use_precon': [True],
+                'preconName': ['AMG'],
+                'solveParallel': solveParallel
                 }
+
+solutionName= solverName[0]
+if len(solverName) > 1:
+    solutionName = '-'.join(solverName)
+
+useReordering= False
 
 options = {
             'verbose' : verbose,
@@ -122,5 +160,7 @@ options = {
             'exactSolution': exactSolution,
             'debug': debug,
             'exactSolutionFun': dirichlet_boundary_condition,
-            'momentOrigin': momentOrigin
+            'momentOrigin': momentOrigin,
+            'useReordering': useReordering,
+            'solutionName': solutionName
           }

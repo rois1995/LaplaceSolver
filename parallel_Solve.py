@@ -5,12 +5,12 @@ Run with: mpiexec -n <nprocs> python solve_parallel_with_vtk.py
 from mpi4py import MPI
 import os
 # os.environ['PETSC_OPTIONS'] = '-info -log_view -mat_view ::ascii_info'
-os.environ['PETSC_COMM_TSALLREDUCE'] = '0'
-os.environ['OMPI_MCA_coll_tuned_use_dynamic_rules'] = '0'
-os.environ['OMPI_MCA_coll_base_verbose'] = '100'  # Debug MPI collective ops
+# os.environ['PETSC_COMM_TSALLREDUCE'] = '0'
+# os.environ['OMPI_MCA_coll_tuned_use_dynamic_rules'] = '0'
+# os.environ['OMPI_MCA_coll_base_verbose'] = '100'  # Debug MPI collective ops
 import petsc4py
 # petsc4py.init(['-log_view']) # optionally petsc4py.init(['-info', '-log_view'])
-petsc4py.init(['-log_view']) # optionally petsc4py.init(['-info', '-log_view'])
+petsc4py.init(['-log_view', '-info']) # optionally petsc4py.init(['-info', '-log_view'])
 from petsc4py import PETSc
 
 # # 🔧 Force initialization of PETSc option and logging subsystems

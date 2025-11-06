@@ -182,6 +182,8 @@ class MeshClass:
                             normals = self.ElementsUtilities._compute_normal_quad(self.Nodes[connectivity])
                             areas = self.ElementsUtilities._compute_quad_area(self.Nodes[connectivity])
                             CVAreas = self.ElementsUtilities._compute_CV_contrib_quad(self.Nodes[connectivity])
+
+                        self.Logger.info(f"For surface {bc_name}, the total area is {np.sum(CVAreas)}")
                         
                         self.boundary_nodes[bc_name] = {
                                                         'connectivity' : connectivity,
@@ -198,6 +200,7 @@ class MeshClass:
                     continue
             
             self.isNodeOnBoundary = isOnBoundary
+
 
 
         
@@ -364,7 +367,7 @@ class MeshClass:
 
                 lines[:, 0, :] = edgeCentroids[:, iEdge]
 
-                signOfEdge = -signOf_EdgesOfElements[iEdge]
+                signOfEdge = signOf_EdgesOfElements[iEdge]
                 edgeAreaContrib = self.ElementsUtilities._compute_line_length(lines, toPrint=False)
 
                 LineNormalsOfEdgeFaces = self.ElementsUtilities._compute_normal_line(lines) * signOfEdge * np.repeat(edgeAreaContrib[..., np.newaxis], 3, axis=1)
