@@ -185,12 +185,27 @@ class ElementsUtilities:
 
         return np.linalg.norm(d1, axis=1)
     
-    def _compute_CV_contrib_line(self, nodes):
+    def _compute_CV_contrib_line(self, nodes, connectivity):
         """Compute boundary CV area for multiple lines"""
-        
-        lineLengths = self._compute_line_length(nodes)
-        return np.repeat(lineLengths[..., np.newaxis], 2, axis=1)/2
-    
+                
+        NodesOfThisBoundary = nodes[connectivity]
+        centroid = np.mean(NodesOfThisBoundary, axis=1)
+
+        Points = np.zeros((connectivity.shape[0], 2, 3), dtype=np.float64)
+        Points[:, 1, :] = centroid
+
+        # Compute All edges MidPoints
+        CVAreas = np.zeros((connectivity.shape[0], 2), dtype=np.float64)
+        CVCentroids = np.zeros((connectivity.shape[0], 2, 3), dtype=np.float64)
+
+        for iNode in range(2):
+            Points[:, 0, :] = NodesOfThisBoundary[:, iNode, :]
+            
+            # Compute CVAreas
+            CVAreas[:, iNode] = self._compute_line_length(Points)
+            CVCentroids[:, iNode, :] = np.mean(Points, axis=1)
+
+        return CVAreas, CVCentroids
 
     def _compute_single_line_length(self, nodes):
         """Compute length for single line"""
@@ -208,27 +223,37 @@ class ElementsUtilities:
 
         return 0.5*np.linalg.norm(np.cross(d1, d2, axis=1), axis=1)
 
-    
-    def _compute_CV_contrib_tria(self, nodes):
-        """Compute boundary CV area for multiple triangles"""
-        self.Logger.info("Compute area for multiple triangles...")
+   
+    def _compute_CV_contrib_tria(self, nodes, connectivity):
+        """Compute boundary CV area for multiple quads"""
+        self.Logger.info("Compute boundary CV area for multiple quads...")
 
-        centroid = np.mean(nodes, axis=1)
-        nodesOfPoints = self.NODESCONNECTIONS_PER_ELEMENT.get(5, 0)
+        edgesOfElement = np.array(self.EDGES_PER_ELEMENT.get(5, 0))
+        edgesOfPoints_PerElement = np.array(self.EDGESOFPOINTS_PER_ELEMENT.get(5, 0))
 
-        CVAreas = np.zeros((nodes[:, :, 0].shape), dtype=np.float64)
-        Points = np.zeros((len(nodes[:, 0, 0]), 4, 3))
+        # CVAreas = np.zeros((nodes[:, :, 0].shape), dtype=np.float64)
+        NodesOfThisBoundary = nodes[connectivity]
+        centroid = np.mean(NodesOfThisBoundary, axis=1)
+        Points = np.zeros((connectivity.shape[0], 4, 3), dtype=np.float64)
         Points[:, 2, :] = centroid
 
+        # Compute All edges MidPoints
+        edgesMidPoints = np.mean(nodes[connectivity[:, edgesOfElement], :], axis=2)
+        CVAreas = np.zeros((connectivity.shape[0], 3), dtype=np.float64)
+        CVCentroids = np.zeros((connectivity.shape[0], 3, 3), dtype=np.float64)
+
         for iNode in range(3):
-            Points[:, 0, :] = nodes[:, iNode, :]
-            edges = nodesOfPoints[iNode]
-            Points[:, 1, :] = (nodes[:, edges[0], :]+nodes[:, iNode, :])/2
-            Points[:, 3, :] = (nodes[:, edges[1], :]+nodes[:, iNode, :])/2
+            Points[:, 0, :] = NodesOfThisBoundary[:, iNode, :]
+            edges = edgesOfPoints_PerElement[iNode]
+            Points[:, 1, :] = edgesMidPoints[:, edges[0], :]
+            Points[:, 3, :] = edgesMidPoints[:, edges[1], :]
+            
             # Compute CVAreas
             CVAreas[:, iNode] = self._compute_quad_area(Points)
+            CVCentroids[:, iNode, :] = np.mean(Points, axis=1)
 
-        return CVAreas
+
+        return CVAreas, CVCentroids
 
     def _compute_single_tria_area(self, nodes):
         """Compute area and for single triangle"""
@@ -254,28 +279,35 @@ class ElementsUtilities:
         return volume
     
 
-    def _compute_CV_contrib_quad(self, nodes):
+    def _compute_CV_contrib_quad(self, nodes, connectivity):
         """Compute boundary CV area for multiple quads"""
         self.Logger.info("Compute boundary CV area for multiple quads...")
 
+        edgesOfElement = np.array(self.EDGES_PER_ELEMENT.get(7, 0))
+        edgesOfPoints_PerElement = np.array(self.EDGESOFPOINTS_PER_ELEMENT.get(7, 0))
 
-        centroid = np.mean(nodes, axis=1)
-        nodesOfPoints = self.NODESCONNECTIONS_PER_ELEMENT.get(7, 0)
-        
-        CVAreas = np.zeros((nodes[:, :, 0].shape), dtype=np.float64)
-        Points = np.zeros((len(nodes[:, 0, 0]), 4, 3))
+        # CVAreas = np.zeros((nodes[:, :, 0].shape), dtype=np.float64)
+        NodesOfThisBoundary = nodes[connectivity]
+        centroid = np.mean(NodesOfThisBoundary, axis=1)
+        Points = np.zeros((connectivity.shape[0], 4, 3), dtype=np.float64)
         Points[:, 2, :] = centroid
 
+        # Compute All edges MidPoints
+        edgesMidPoints = np.mean(nodes[connectivity[:, edgesOfElement], :], axis=2)
+        CVAreas = np.zeros((connectivity.shape[0], 4), dtype=np.float64)
+        CVCentroids = np.zeros((connectivity.shape[0], 4, 3), dtype=np.float64)
+
         for iNode in range(4):
-            Points[:, 0, :] = nodes[:, iNode, :]
-            edges = nodesOfPoints[iNode]
-            Points[:, 1, :] = (nodes[:, edges[0], :]+nodes[:, iNode, :])/2
-            Points[:, 3, :] = (nodes[:, edges[1], :]+nodes[:, iNode, :])/2
+            Points[:, 0, :] = NodesOfThisBoundary[:, iNode, :]
+            edges = edgesOfPoints_PerElement[iNode]
+            Points[:, 1, :] = edgesMidPoints[:, edges[0], :]
+            Points[:, 3, :] = edgesMidPoints[:, edges[1], :]
             
             # Compute CVAreas
             CVAreas[:, iNode] = self._compute_quad_area(Points)
+            CVCentroids[:, iNode, :] = np.mean(Points, axis=1)
 
-        return CVAreas
+        return CVAreas, CVCentroids
     
     
     def _compute_tetra_volume(self, nodes, toPrint=True):

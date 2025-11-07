@@ -364,9 +364,9 @@ class UnstructuredPoissonSolver:
         intFlux = np.sum(b[:N]*ControlVolumesPerNode)
 
         totBoundaryArea = 0.0
-        totBoundaryNormalLength = 0.0
         totBoundaryNormal = np.zeros(3)
         totBoundaryNormalTimesArea = np.zeros(3)
+
 
         DirichletNodes = np.full((N, 1), False)
 
@@ -378,40 +378,50 @@ class UnstructuredPoissonSolver:
             if actualPoint%1000 == 0:
                 self.Logger.info(f"Imposing boundary conditions at point: {iBoundNode}")
 
-            bc_name = self.Mesh.BCsAssociatedToNode[iBoundNode]
-            bc_data = self.boundary_conditions[bc_name]
-            if bc_data['BCType'] == 1:  # Neumann BC
+            bc_names = self.Mesh.BCsAssociatedToNode[iBoundNode]
+            for iBC in range(len(bc_names)):
 
-                BoundaryCVArea = self.Mesh.boundaryCVArea[iBoundNode]
-                bNormal = self.Mesh.boundaryNormal[iBoundNode]
+                bc_data = self.boundary_conditions[bc_names[iBC]]
 
-                # Neumann BC: ∂φ/∂n = bc_value
-                # Approximate using one-sided difference
-                bc_val = bc_data['Value'](self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], -bNormal, self.momentOrigin, ForceOrMoment, component_idx, bc_data["typeOfExactSolution"])
-                
-                # print(bc_val)
-                b[iBoundNode] -= bc_val*BoundaryCVArea/ControlVolumesPerNode[iBoundNode]
-                extFlux += bc_val*BoundaryCVArea
-                totBoundaryArea+=BoundaryCVArea
-                totBoundaryNormal+=-bNormal
-                totBoundaryNormalLength += np.linalg.norm(bNormal)
-                totBoundaryNormalTimesArea+=-bNormal*BoundaryCVArea
+                if bc_data['BCType'] == 1:  # Neumann BC
 
-            elif bc_data['BCType'] == 0: # Dirichlet BC
-                # Dirichlet BC: φ = bc_value
+                    bc_nodes = self.Mesh.boundary_nodes[bc_names[iBC]]
+                    bnodes = bc_nodes['connectivity']
+                    CellNormals = bc_nodes['normals']
+                    CVAreas = bc_nodes['BoundaryCVArea']
+                    CVCentroids = bc_nodes['BoundaryCVCentroids']
+                    # print(areas)
+                    
+                    # Find all occurrencies of this node in the connectivity
+                    iElem, jPoint = np.where(bnodes == iBoundNode)
 
-                # bc_val = bc_data['Value'](self.Mesh.Nodes[iBoundNode, 0], self.Mesh.Nodes[iBoundNode, 1], self.Mesh.Nodes[iBoundNode, 2], bc_data["typeOfExactSolution"])
+                    actualNormal = np.zeros(3, dtype=np.float64)
 
-                DirichletNodes[iBoundNode] = True
-                # for jthNode in range(NumOfNodeOfNodes[iBoundNode]):
-                #     jNode = NodeOfNodes[iBoundNode, jthNode]
-                #     b[jNode] -= A[jNode, iBoundNode] * bc_val
+                    for (elem, point) in zip(iElem, jPoint):
 
-                # A[iBoundNode, :] = 0
-                # A[:, iBoundNode] = 0
-                # A[iBoundNode, iBoundNode] = 1.0
-                # b[iBoundNode] = bc_val
-                
+                        BoundaryCVArea = CVAreas[elem, point]
+                        Centroid = CVCentroids[elem, point]
+                        bNormal = CellNormals[elem, point]
+
+                        totBoundaryArea+=BoundaryCVArea
+                        totBoundaryNormal+=bNormal
+                        totBoundaryNormalTimesArea+=bNormal*BoundaryCVArea
+
+                        bc_val = bc_data['Value'](Centroid[0], Centroid[1], Centroid[2], -bNormal, self.momentOrigin, ForceOrMoment, component_idx, bc_data["typeOfExactSolution"])
+                        
+                        b[iBoundNode] -= bc_val*BoundaryCVArea/ControlVolumesPerNode[iBoundNode]
+                        extFlux += bc_val*BoundaryCVArea
+
+                        # Neumann BC: ∂φ/∂n = bc_value
+                        # Approximate using one-sided difference
+
+                        
+
+                elif bc_data['BCType'] == 0: # Dirichlet BC
+                    # Dirichlet BC: φ = bc_value
+                    DirichletNodes[iBoundNode] = True
+                    iBC = len(bc_names)+1 # Exit from the loop since it is a Dirichlet BC and I do not care anymore
+                    
             actualPoint+= 1
         
         if len(np.where(DirichletNodes)[0]) > 0:
@@ -421,7 +431,6 @@ class UnstructuredPoissonSolver:
             DiricNodsIds = np.where(DirichletNodes)[0]
             for i,uD in zip(DiricNodsIds, bc_val):
                 col_slice = slice(A_csc.indptr[i], A_csc.indptr[i+1])
-                col_data = A_csc.data[col_slice]
                 b -= (A_csc[:, i].toarray().ravel()) * uD
                 A_csc.data[col_slice] = 0.0
 
@@ -431,13 +440,14 @@ class UnstructuredPoissonSolver:
                 A.data[row_slice] = 0.0
                 A[i,i] = 1.0
                 b[i] = uD
+
+            A = A.tolil()
         
         self.Logger.info(f"AAAAAAAAAAAAAAAAaa extFlux = {extFlux}")
         self.Logger.info(f"AAAAAAAAAAAAAAAAaa intFlux = {intFlux}")
         self.Logger.info(f"AAAAAAAAAAAAAAAAaa sumFlux = {np.sum(b[:N]*ControlVolumesPerNode)}")
         self.Logger.info(f"AAAAAAAAAAAAAAAAaa total boundary area = {totBoundaryArea}")
         self.Logger.info(f"AAAAAAAAAAAAAAAAaa total boundary normal = {totBoundaryNormal}")
-        self.Logger.info(f"AAAAAAAAAAAAAAAAaa total boundary normal length = {totBoundaryNormalLength}")
         self.Logger.info(f"AAAAAAAAAAAAAAAAaa total boundary area*normal = {totBoundaryNormalTimesArea}")
         # print(A.diagonal())
         return A, b
@@ -688,10 +698,11 @@ class UnstructuredPoissonSolver:
                                 **comp)
             
             # Optional: Boundary normals
-            mesh_grp.create_dataset('boundary_normals', 
-                                data=self.Mesh.boundaryNormal, 
-                                **comp)
+            # mesh_grp.create_dataset('boundary_normals', 
+            #                     data=self.Mesh.boundaryNormal, 
+            #                     **comp)
             
+            self.Logger.info(f"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA self.exactSolution")
             if self.exactSolution >= 0:
                 mesh_grp.create_dataset('ExactSolution', 
                                     data=self.exactSolutionFun(self.Mesh.Nodes[:, 0], self.Mesh.Nodes[:, 1], self.Mesh.Nodes[:, 2], self.exactSolution), 
@@ -732,7 +743,7 @@ class UnstructuredPoissonSolver:
         for bc in self.boundary_conditions.keys():
             if not self.boundary_conditions[bc]['BCType'] == BC_TYPE_MAP.get('Neumann', 0):
                 allNeumann = False
-        self.allNeumann = allNeumann and not (solver[0] == "minres")
+        self.allNeumann = allNeumann and not (solver[0] == "minres" or solver[0] == "cg")
 
 
         self.Mesh.build_DualControlVolumes()
@@ -931,10 +942,10 @@ class UnstructuredPoissonSolver:
 
             # Append Control Volume information
             phi["DualControlVolume"] = self.Mesh.ControlVolumesPerNode
-            if self.debug:
-                phi["Normal_X"] = self.Mesh.boundaryNormal[:, 0]
-                phi["Normal_Y"] = self.Mesh.boundaryNormal[:, 1]
-                phi["Normal_Z"] = self.Mesh.boundaryNormal[:, 2]
+            # if self.debug:
+            #     phi["Normal_X"] = self.Mesh.boundaryNormal[:, 0]
+            #     phi["Normal_Y"] = self.Mesh.boundaryNormal[:, 1]
+            #     phi["Normal_Z"] = self.Mesh.boundaryNormal[:, 2]
             if self.exactSolution >= 0:
                 phi["ExactSolution"] = self.exactSolutionFun(self.Mesh.Nodes[:, 0], self.Mesh.Nodes[:, 1], self.Mesh.Nodes[:, 2], self.exactSolution)
 
@@ -990,10 +1001,6 @@ class UnstructuredPoissonSolver:
         callback = None
         if verbose:
             callback = self.UnifiedVerboseCallback(A, b, self.Logger)
-
-        # Initial guess (not zeros for Neumann problems)
-        x0 = np.random.randn(len(b))
-        x0 = x0 - np.mean(x0)  # Remove constant component
 
 
         self.Logger.info("Starting BiCGSTAB...")
@@ -1315,19 +1322,20 @@ class UnstructuredPoissonSolver:
         try:
             B = np.ones((A.shape[0], 1))
             ml = pyamg.smoothed_aggregation_solver(A, B,
-    
+                                                    symmetry='symmetric',  # or 'hermitian' 
+                                                            
                                                     # Key: Use simple Jacobi smoothing (not energy!)
                                                     smooth='jacobi',  # Much less memory than energy
                                                     
                                                     # Aggressive coarsening to reduce memory
-                                                    strength=('symmetric', {'theta': 0.25}),  # Higher theta = fewer connections
+                                                    strength=('symmetric', {'theta': 0.45}),  # Higher theta = fewer connections
                                                     
                                                     # Standard aggregation (not lloyd - too expensive at this scale)
                                                     aggregate='standard',
                                                     
                                                     # Limit hierarchy depth
-                                                    max_levels=10,
-                                                    max_coarse=1000,  # Larger coarse grid to stop earlier
+                                                    max_levels=3,
+                                                    max_coarse=50,  # Larger coarse grid to stop earlier
                                                     
                                                     # Simple smoothers
                                                     presmoother=('gauss_seidel', {'sweep': 'forward'}),
@@ -1351,7 +1359,6 @@ class UnstructuredPoissonSolver:
         try:
             ml, work = pyamg.aggregation.adaptive_sa_solver(A, 
                                                             symmetry='symmetric',  # or 'hermitian' 
-                                                            pdef=True,              # True if positive definite
                                                             num_candidates=2,       # Number of candidates to generate
                                                             candidate_iters=8,      # Smoothing passes per level
                                                             improvement_iters=1,      # Smoothing passes per level

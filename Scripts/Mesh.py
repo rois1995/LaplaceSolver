@@ -171,17 +171,24 @@ class MeshClass:
                         connectivity = np.reshape(connectivity, (int(len(connectivity)/nPointsPerElement), nPointsPerElement))
                         
                         if BCs[bc_name]['Elem_type'] == 'line':
-                            normals = self.ElementsUtilities._compute_normal_line(self.Nodes[connectivity])
+                            # It seems like in 2D the boundary normals are going out from the domain
+                            # But only if you orient them to be like this in the PW file!!!!!
+
+                            normals = -np.repeat(self.ElementsUtilities._compute_normal_line(self.Nodes[connectivity])[:, np.newaxis, :], 2, axis=1)
+                            # for iElem in range(connectivity.shape[0]):
+                            #     print(self.Nodes[connectivity[iElem, :], :])
+                            #     print(normals[iElem, :])
+                            #     print("")
                             areas = self.ElementsUtilities._compute_line_length(self.Nodes[connectivity])
-                            CVAreas = self.ElementsUtilities._compute_CV_contrib_line(self.Nodes[connectivity])
+                            CVAreas, CVCentroids = self.ElementsUtilities._compute_CV_contrib_line(self.Nodes, connectivity)
                         elif BCs[bc_name]['Elem_type'] == 'tri':
-                            normals = self.ElementsUtilities._compute_normal_tria(self.Nodes[connectivity])
+                            normals = np.repeat(self.ElementsUtilities._compute_normal_tria(self.Nodes[connectivity])[:, np.newaxis, :], 3, axis=1)
                             areas = self.ElementsUtilities._compute_tria_area(self.Nodes[connectivity])
-                            CVAreas = self.ElementsUtilities._compute_CV_contrib_tria(self.Nodes[connectivity])
+                            CVAreas, CVCentroids = self.ElementsUtilities._compute_CV_contrib_tria(self.Nodes, connectivity)
                         elif BCs[bc_name]['Elem_type'] == 'quad':
-                            normals = self.ElementsUtilities._compute_normal_quad(self.Nodes[connectivity])
+                            normals = np.repeat(self.ElementsUtilities._compute_normal_quad(self.Nodes[connectivity])[:, np.newaxis, :], 4, axis=1)
                             areas = self.ElementsUtilities._compute_quad_area(self.Nodes[connectivity])
-                            CVAreas = self.ElementsUtilities._compute_CV_contrib_quad(self.Nodes[connectivity])
+                            CVAreas, CVCentroids = self.ElementsUtilities._compute_CV_contrib_quad(self.Nodes, connectivity)
 
                         self.Logger.info(f"For surface {bc_name}, the total area is {np.sum(CVAreas)}")
                         
@@ -190,7 +197,8 @@ class MeshClass:
                                                         'normals': normals,
                                                         'areas': areas,
                                                         'elem_type': BCs[bc_name]['Elem_type'],
-                                                        'BoundaryCVArea': CVAreas
+                                                        'BoundaryCVArea': CVAreas,
+                                                        'BoundaryCVCentroids': CVCentroids
                                                         }
                         self.boundary_faces[bc_name] = bc_name
                         self.Logger.info(f"  Boundary '{bc_name}': {len(connectivity)} nodes")
@@ -258,38 +266,38 @@ class MeshClass:
 
     def set_boundary_Variables(self, boundary_conditions):
         # Now assign normals to boundary nodes
-            boundaryNormal = np.zeros((len(self.Nodes), 3), dtype=np.float64)
-            HowManyNormals = np.zeros((len(self.Nodes), ), dtype=np.int32)
-            boundaryCVArea = np.zeros((len(self.Nodes), ), dtype=np.float64)
-            BCsAssociatedToNode = np.empty((len(self.Nodes), ), dtype='U40')
+            # boundaryNormal = np.zeros((len(self.Nodes), 3), dtype=np.float64)
+            # HowManyNormals = np.zeros((len(self.Nodes), ), dtype=np.int32)
+            # boundaryCVArea = np.zeros((len(self.Nodes), ), dtype=np.float64)
+            BCsAssociatedToNode = [[] for i in range(self.n_nodes)]
 
             # BCsAssociatedToNode = [[] for _ in range(self.n_nodes)]
 
-            for bname, bdict in self.boundary_nodes.items():
-                bnodes = bdict['connectivity']
-                nPointsPerElem = len(bnodes[0, :])
-                normals = bdict['normals']
-                areas = bdict['BoundaryCVArea']
+            # for bname, bdict in self.boundary_nodes.items():
+            #     bnodes = bdict['connectivity']
+            #     nPointsPerElem = len(bnodes[0, :])
+            #     normals = bdict['normals']
+            #     areas = bdict['BoundaryCVArea']
 
-                np.add.at(boundaryNormal, bnodes.flatten(), np.repeat(normals, nPointsPerElem, axis=0))
-                np.add.at(HowManyNormals, bnodes.flatten(), 1)
-                np.add.at(boundaryCVArea, bnodes.flatten(), np.repeat(areas[: ,0], nPointsPerElem, axis=0))
+            #     np.add.at(boundaryNormal, bnodes.flatten(), np.repeat(normals, nPointsPerElem, axis=0))
+            #     np.add.at(HowManyNormals, bnodes.flatten(), 1)
+            #     np.add.at(boundaryCVArea, bnodes.flatten(), np.repeat(areas[: ,0], nPointsPerElem, axis=0))
 
-                mask = np.logical_not(HowManyNormals == 0)
-                boundaryNormal[mask, :] /= np.repeat(HowManyNormals[mask, np.newaxis], 3, axis=1)
-                boundaryNormal[mask, :] /= np.repeat(np.linalg.norm(boundaryNormal[mask, :], axis=1)[:, np.newaxis], 3, axis=1)
+            #     mask = np.logical_not(HowManyNormals == 0)
+            #     boundaryNormal[mask, :] /= np.repeat(HowManyNormals[mask, np.newaxis], 3, axis=1)
+            #     boundaryNormal[mask, :] /= np.repeat(np.linalg.norm(boundaryNormal[mask, :], axis=1)[:, np.newaxis], 3, axis=1)
 
             for iBoundNode in np.where(self.isNodeOnBoundary)[0]:
                 for bname, bdict in self.boundary_nodes.items():
                     bnodes = bdict['connectivity']
                     if iBoundNode in bnodes:
-                        BCsAssociatedToNode[iBoundNode] = bname  # I don't really care about how many are there,
-                                                                 # since for this problem all nodes belonging
-                                                                 # to the same surface will have the same BC
+                        BCsAssociatedToNode[iBoundNode] += [bname]  # I don't really care about how many are there,
+                                                                    # since for this problem all nodes belonging
+                                                                    # to the same surface will have the same BC
                         
-            self.boundaryNormal = boundaryNormal
+            # self.boundaryNormal = boundaryNormal
             self.BCsAssociatedToNode = BCsAssociatedToNode
-            self.boundaryCVArea = boundaryCVArea
+            # self.boundaryCVArea = boundaryCVArea
 
     def build_DualControlVolumes(self):
         

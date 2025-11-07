@@ -9,8 +9,8 @@ import os
 # os.environ['OMPI_MCA_coll_tuned_use_dynamic_rules'] = '0'
 # os.environ['OMPI_MCA_coll_base_verbose'] = '100'  # Debug MPI collective ops
 import petsc4py
-# petsc4py.init(['-log_view']) # optionally petsc4py.init(['-info', '-log_view'])
-petsc4py.init(['-log_view', '-info']) # optionally petsc4py.init(['-info', '-log_view'])
+petsc4py.init([]) # optionally petsc4py.init(['-info', '-log_view'])
+# petsc4py.init(['-log_view', '-info']) # optionally petsc4py.init(['-info', '-log_view'])
 from petsc4py import PETSc
 
 # # 🔧 Force initialization of PETSc option and logging subsystems
@@ -515,7 +515,7 @@ def gather_solution(x_petsc, comm):
     else:
         return None
 
-def solve_system_serial_workaround(A_scipy, b_numpy, comm, Logger):
+def solve_system_serial_workaround(A_scipy, b_numpy, is_pure_neumann, comm, Logger):
     """
     Solve on rank 0 serially, then distribute solution.
     Bypasses PETSc matrix assembly issues.
@@ -602,25 +602,13 @@ def solve_system_serial_workaround(A_scipy, b_numpy, comm, Logger):
         
         check_matrix_quality(A_combined, b_combined, rank_0_only=True)
 
-        print("\nAnalyzing problem type...")
-        is_pure_neumann, max_row_sum, b_sum, is_singular, is_compatible = detect_pure_neumann(A_scipy, b_numpy, tolerance=1e-9)
-
-        print("Matrix Analysis:")
-        print(f"  Max row sum: {max_row_sum:.6e} (should be ~0)")
-        print(f"  Singular: {is_singular}")
-        
-        print("\nRHS Analysis:")
-        print(f"  RHS sum: {b_sum:.6e} (should be ~0)")
-        print(f"  Compatible: {is_compatible}")
-
         ksp = PETSc.KSP().create(comm=MPI.COMM_SELF)
         ksp.setOperators(A_petsc)
         opts = PETSc.Options()
 
         if is_pure_neumann:
             print("  ✓ Pure Neumann problem detected!")
-            print(f"    Max row sum: {max_row_sum:.6e}")
-            print(f"    RHS sum: {b_sum:.6e}")
+            print("    Removing the null space..")
 
             nullvec = A_petsc.createVecRight()
             nullvec.setValues(range(len(b_combined)), [1.0]*len(b_combined))
@@ -633,13 +621,9 @@ def solve_system_serial_workaround(A_scipy, b_numpy, comm, Logger):
 
             # Make b compatible
             nullsp.remove(b_petsc)
-        
-        else:
-            print("  ✓ Mixed/Dirichlet problem detected")
-            print(f"    Max row sum: {max_row_sum:.6e}")
-            print(f"    RHS sum: {b_sum:.6e}")
 
 
+        print("  ✓ Using CG")
         solver_type = "CG"
         # Mixed BC: use CG
         ksp.setType(PETSc.KSP.Type.CG)
@@ -651,7 +635,6 @@ def solve_system_serial_workaround(A_scipy, b_numpy, comm, Logger):
         opts.setValue('-pc_gamg_agg_nsmooths', '1')
         opts.setValue('-pc_gamg_threshold', '0.02')
         opts.setValue('-pc_gamg_coarse_eq_limit', '1000')
-        print("  ✓ Using CG")
 
         # Setup solver (serial)
         
@@ -709,7 +692,7 @@ def solve_system_serial_workaround(A_scipy, b_numpy, comm, Logger):
     
     return x_solution
 
-def detect_pure_neumann(A_scipy, b_numpy, tolerance=1e-10):
+def detect_pure_neumann(A_scipy, b_numpy, CVs, tolerance=1e-10):
     """
     Detect if this is a pure Neumann problem.
     
@@ -724,7 +707,7 @@ def detect_pure_neumann(A_scipy, b_numpy, tolerance=1e-10):
     max_row_sum = np.max(np.abs(row_sums))
     
     # Condition 2: Check RHS sum (compatibility)
-    b_sum = np.sum(b_numpy)
+    b_sum = np.sum(b_numpy*CVs)
     
     # Both conditions must be satisfied
     is_singular = max_row_sum < tolerance
@@ -828,7 +811,23 @@ def main():
     # Load data
     A_scipy, b, perm, nnz_per_row, mesh_data = load_from_hdf5('matrix_data.h5', 'Mesh_data.h5', comm, Logger)
     
-    # Convert to PETSc
+    if rank == 0:
+        print("\nAnalyzing problem type...")
+    CVs = mesh_data['control_volumes'] if perm is None else mesh_data['control_volumes'][perm]
+    is_pure_neumann, max_row_sum, b_sum, is_singular, is_compatible = detect_pure_neumann(A_scipy, b, CVs, tolerance=1e-9)
+    if rank == 0:
+        print("Matrix Analysis:")
+        print(f"  Max row sum: {max_row_sum:.6e} (should be ~0)")
+        print(f"  Singular: {is_singular}")
+        print("\nRHS Analysis:")
+        print(f"  RHS sum: {b_sum:.6e} (should be ~0)")
+        print(f"  Compatible: {is_compatible}")
+        if is_pure_neumann:
+            print("  ✓ Pure Neumann problem detected!")
+        else:
+            print("  ✓ Mixed/Dirichlet problem detected")
+
+    # # Convert to PETSc
     # if rank == 0:
     #     print("\nConverting to PETSc format...")
     # A_petsc = create_petsc_matrix_optimal(A_scipy, nnz_per_row, comm, Logger)
@@ -836,7 +835,7 @@ def main():
     
     # Solve
     # x_petsc = solve_system(A_petsc, b, comm, Logger)
-    x_full = solve_system_serial_workaround(A_scipy, b, comm, Logger)
+    x_full = solve_system_serial_workaround(A_scipy, b, is_pure_neumann, comm, Logger)
 
 
     if rank == 0:
